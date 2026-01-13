@@ -53,8 +53,7 @@ export default function ChatScreen() {
 
         await sendTextMessageStream(
           text,
-          selectedLanguage === 'auto' ? undefined : selectedLanguage,
-          (chunk) => {
+          (chunk: { type: string; value: string }) => {
             if (chunk.type === 'language') {
               detectedLang = chunk.value as Language;
             } else if (chunk.type === 'content') {
@@ -72,7 +71,8 @@ export default function ChatScreen() {
                           detectedLang === 'ta' ? 'ta-IN' : 'te-IN',
               });
             }
-          }
+          },
+          selectedLanguage === 'auto' ? undefined : selectedLanguage
         );
       } else {
         // Non-streaming mode

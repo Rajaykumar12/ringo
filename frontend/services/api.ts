@@ -51,8 +51,8 @@ export const sendTextMessage = async (
 
 export const sendTextMessageStream = async (
   message: string,
-  language?: string,
-  onChunk: (chunk: { type: string; value: string }) => void
+  onChunk: (chunk: { type: string; value: string }) => void,
+  language?: string
 ): Promise<void> => {
   const formData = new FormData();
   formData.append('message', message);
