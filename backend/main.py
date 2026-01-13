@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from google import genai
 from google.genai import types
@@ -53,6 +53,47 @@ LANGUAGE_PROMPTS = {
     "te": "Telugu",
 }
 
+# --- LANGUAGE DETECTION ---
+def detect_language(text: str) -> str:
+    """
+    Automatically detect the language of the input text.
+    
+    Args:
+        text: The input text to analyze
+        
+    Returns:
+        Language code (en, hi, ta, te) or 'en' as default
+    """
+    try:
+        detection_prompt = f"""Analyze this text and return ONLY the language code from this list:
+- en (English)
+- hi (Hindi)
+- ta (Tamil)
+- te (Telugu)
+
+Text: {text}
+
+Return only the 2-letter code, nothing else."""
+        
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=detection_prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.1,
+            )
+        )
+        
+        detected = response.text.strip().lower()
+        
+        # Validate the detected language
+        if detected in LANGUAGE_PROMPTS:
+            return detected
+        return "en"
+        
+    except Exception as e:
+        print(f"Language detection error: {e}")
+        return "en"
+
 # --- SYSTEM INSTRUCTION ---
 def get_system_prompt(language: str = "en"):
     lang_name = LANGUAGE_PROMPTS.get(language, "English")
@@ -102,47 +143,90 @@ async def root():
 @app.post("/chat/text")
 async def text_chat(
     message: str = Form(...),
-    language: str = Form("en")
+    language: Optional[str] = Form(None),
+    stream: bool = Form(False)
 ):
     """
-    Text-to-Text Chat Endpoint with RAG
+    Text-to-Text Chat Endpoint with RAG (supports streaming)
     
     Args:
         message: User's text message
-        language: Language code (en, hi, ta, te)
+        language: Language code (en, hi, ta, te) - auto-detected if not provided
+        stream: Enable streaming response (default: False)
     
     Returns:
-        JSON with AI response
+        JSON with AI response or Server-Sent Events stream
     """
     try:
-        # Validate language
-        if language not in LANGUAGE_PROMPTS:
-            language = "en"
+        # Auto-detect language if not provided
+        if not language or language not in LANGUAGE_PROMPTS:
+            language = detect_language(message)
+            print(f"Auto-detected language: {language}")
         
-        # Create agent configuration with retrieval tool
-        response = client.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=message,
-            config=types.GenerateContentConfig(
-                system_instruction=get_system_prompt(language),
-                tools=[retrieval_tool],
-                temperature=0.7,
+        if stream:
+            # Streaming response
+            async def generate_stream():
+                try:
+                    # Send language detection event
+                    yield f"data: {{\"type\": \"language\", \"value\": \"{language}\"}}\n\n"
+                    
+                    # Stream the response
+                    response_stream = client.models.generate_content_stream(
+                        model="gemini-3-flash-preview",
+                        contents=message,
+                        config=types.GenerateContentConfig(
+                            system_instruction=get_system_prompt(language),
+                            tools=[retrieval_tool],
+                            temperature=0.7,
+                        )
+                    )
+                    
+                    for chunk in response_stream:
+                        if chunk.text:
+                            # Send text chunk
+                            import json
+                            yield f"data: {{\"type\": \"content\", \"value\": {json.dumps(chunk.text)}}}\n\n"
+                    
+                    # Send completion event
+                    yield f"data: {{\"type\": \"done\"}}\n\n"
+                    
+                except Exception as e:
+                    yield f"data: {{\"type\": \"error\", \"value\": \"{str(e)}\"}}\n\n"
+            
+            return StreamingResponse(
+                generate_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
             )
-        )
-        
-        # Extract text response
-        reply_text = ""
-        if response.text:
-            reply_text = response.text
         else:
-            # Check if tool was called but no final response
-            reply_text = "Information not available in internal documents."
-        
-        return JSONResponse(content={
-            "success": True,
-            "response": reply_text,
-            "language": language
-        })
+            # Non-streaming response (original behavior)
+            response = client.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=message,
+                config=types.GenerateContentConfig(
+                    system_instruction=get_system_prompt(language),
+                    tools=[retrieval_tool],
+                    temperature=0.7,
+                )
+            )
+            
+            # Extract text response
+            reply_text = ""
+            if response.text:
+                reply_text = response.text
+            else:
+                # Check if tool was called but no final response
+                reply_text = "Information not available in internal documents."
+            
+            return JSONResponse(content={
+                "success": True,
+                "response": reply_text,
+                "language": language
+            })
         
     except Exception as e:
         print(f"Error in text_chat: {e}")
@@ -151,29 +235,28 @@ async def text_chat(
 @app.post("/chat/audio")
 async def audio_chat(
     file: UploadFile = File(...),
-    language: str = Form("en")
+    language: Optional[str] = Form(None),
+    stream: bool = Form(False)
 ):
     """
-    Audio-to-Audio Chat Endpoint with RAG
+    Audio-to-Audio Chat Endpoint with RAG (supports streaming)
     
     Process:
     1. Transcribe audio to text using Gemini
-    2. Query RAG agent with transcribed text
-    3. Return response text (frontend will handle TTS)
+    2. Auto-detect language from transcription (if not provided)
+    3. Query RAG agent with transcribed text
+    4. Return audio response or stream text response
     
     Args:
         file: Audio file (WAV, MP3, etc.)
-        language: Language code (en, hi, ta, te)
+        language: Language code (en, hi, ta, te) - auto-detected if not provided
+        stream: Enable streaming text response (default: False)
     
     Returns:
-        JSON with transcription and AI response
+        Audio response or streamed text response with transcription
     """
     try:
         print(f"Received audio file: {file.filename}, content_type: {file.content_type}, language: {language}")
-        
-        # Validate language
-        if language not in LANGUAGE_PROMPTS:
-            language = "en"
         
         # Read audio file
         audio_bytes = await file.read()
@@ -187,12 +270,12 @@ async def audio_chat(
         if not mime_type.startswith("audio/"):
             mime_type = "audio/wav"
         
-        # Step 1: Transcribe Audio using Gemini
+        # Step 1: Transcribe Audio using Gemini (language-agnostic first)
         transcription_response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=[
                 types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                f"Transcribe this audio exactly in {LANGUAGE_PROMPTS.get(language, 'English')}. Only output the transcription, nothing else."
+                "Transcribe this audio exactly in its original language. Only output the transcription, nothing else."
             ]
         )
         
@@ -204,7 +287,51 @@ async def audio_chat(
                 "error": "Could not transcribe audio"
             }, status_code=400)
         
-        # Step 2: Query RAG Agent with Transcribed Text
+        # Auto-detect language from transcription if not provided
+        if not language or language not in LANGUAGE_PROMPTS:
+            language = detect_language(user_text)
+            print(f"Auto-detected language: {language}")
+        
+        if stream:
+            # Stream text response for audio input
+            async def generate_audio_stream():
+                try:
+                    # Send transcription and language
+                    import json
+                    yield f"data: {{\"type\": \"transcription\", \"value\": {json.dumps(user_text)}}}\n\n"
+                    yield f"data: {{\"type\": \"language\", \"value\": \"{language}\"}}\n\n"
+                    
+                    # Stream the RAG response
+                    response_stream = client.models.generate_content_stream(
+                        model="gemini-3-flash-preview",
+                        contents=user_text,
+                        config=types.GenerateContentConfig(
+                            system_instruction=get_system_prompt(language),
+                            tools=[retrieval_tool],
+                            temperature=0.7,
+                        )
+                    )
+                    
+                    for chunk in response_stream:
+                        if chunk.text:
+                            yield f"data: {{\"type\": \"content\", \"value\": {json.dumps(chunk.text)}}}\n\n"
+                    
+                    yield f"data: {{\"type\": \"done\"}}\n\n"
+                    
+                except Exception as e:
+                    yield f"data: {{\"type\": \"error\", \"value\": \"{str(e)}\"}}\n\n"
+            
+            return StreamingResponse(
+                generate_audio_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+        
+        # Non-streaming: Step 2: Query RAG Agent with Transcribed Text
         rag_response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=user_text,

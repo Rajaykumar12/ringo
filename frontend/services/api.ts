@@ -35,19 +35,70 @@ export interface AudioChatResponse {
 
 export const sendTextMessage = async (
   message: string,
-  language: string = 'en'
+  language?: string,
+  stream: boolean = false
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('message', message);
-  formData.append('language', language);
+  if (language) {
+    formData.append('language', language);
+  }
+  formData.append('stream', stream.toString());
 
   const response = await api.post<ChatResponse>('/chat/text', formData);
   return response.data;
 };
 
+export const sendTextMessageStream = async (
+  message: string,
+  language?: string,
+  onChunk: (chunk: { type: string; value: string }) => void
+): Promise<void> => {
+  const formData = new FormData();
+  formData.append('message', message);
+  if (language) {
+    formData.append('language', language);
+  }
+  formData.append('stream', 'true');
+
+  const response = await fetch(`${API_BASE_URL}/chat/text`, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+
+  if (!reader) throw new Error('No reader available');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    const chunk = decoder.decode(value);
+    const lines = chunk.split('\n');
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onChunk(data);
+        } catch (e) {
+          console.error('Failed to parse SSE data:', e);
+        }
+      }
+    }
+  }
+};
+
 export const sendAudioMessage = async (
   audioUri: string,
-  language: string = 'en'
+  language?: string,
+  stream: boolean = false
 ): Promise<AudioChatResponse> => {
   const formData = new FormData();
   
@@ -66,7 +117,10 @@ export const sendAudioMessage = async (
     } as any);
   }
   
-  formData.append('language', language);
+  if (language) {
+    formData.append('language', language);
+  }
+  formData.append('stream', stream.toString());
 
   const response = await api.post('/chat/audio', formData, {
     headers: {

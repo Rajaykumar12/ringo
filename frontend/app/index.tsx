@@ -13,14 +13,15 @@ import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
-import { Message, sendTextMessage, sendAudioMessage, AudioChatResponse } from '@/services/api';
+import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse } from '@/services/api';
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
-  const [selectedLanguage, setSelectedLanguage] = useState<Language>('en');
+  const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
+  const [useStreaming, setUseStreaming] = useState(true);
 
   // Handle text message send
   const handleSendText = async (text: string) => {
@@ -35,23 +36,68 @@ export default function ChatScreen() {
     setIsLoading(true);
 
     try {
-      const response = await sendTextMessage(text, selectedLanguage);
+      if (useStreaming) {
+        // Streaming mode
+        const aiMessageId = (Date.now() + 1).toString();
+        let streamedText = '';
+        let detectedLang = selectedLanguage;
 
-      // Add AI response
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        text: response.response,
-        sender: 'ai',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, aiMessage]);
+        // Create placeholder AI message
+        const aiMessage: Message = {
+          id: aiMessageId,
+          text: '',
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
 
-      // Speak the response
-      Speech.speak(response.response, {
-        language: selectedLanguage === 'en' ? 'en-US' : 
-                  selectedLanguage === 'hi' ? 'hi-IN' :
-                  selectedLanguage === 'ta' ? 'ta-IN' : 'te-IN',
-      });
+        await sendTextMessageStream(
+          text,
+          selectedLanguage === 'auto' ? undefined : selectedLanguage,
+          (chunk) => {
+            if (chunk.type === 'language') {
+              detectedLang = chunk.value as Language;
+            } else if (chunk.type === 'content') {
+              streamedText += chunk.value;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === aiMessageId ? { ...msg, text: streamedText } : msg
+                )
+              );
+            } else if (chunk.type === 'done') {
+              // Speak the complete response
+              Speech.speak(streamedText, {
+                language: detectedLang === 'en' ? 'en-US' :
+                          detectedLang === 'hi' ? 'hi-IN' :
+                          detectedLang === 'ta' ? 'ta-IN' : 'te-IN',
+              });
+            }
+          }
+        );
+      } else {
+        // Non-streaming mode
+        const response = await sendTextMessage(
+          text,
+          selectedLanguage === 'auto' ? undefined : selectedLanguage
+        );
+
+        // Add AI response
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: response.response,
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+
+        // Speak the response
+        const lang = response.language || selectedLanguage;
+        Speech.speak(response.response, {
+          language: lang === 'en' ? 'en-US' :
+                    lang === 'hi' ? 'hi-IN' :
+                    lang === 'ta' ? 'ta-IN' : 'te-IN',
+        });
+      }
     } catch (error) {
       console.error('Error sending text:', error);
       Alert.alert('Error', 'Failed to send message. Check your connection and API URL.');
@@ -117,7 +163,10 @@ export default function ChatScreen() {
       };
       setMessages((prev) => [...prev, userMessage]);
 
-      const response = await sendAudioMessage(uri, selectedLanguage);
+      const response = await sendAudioMessage(
+        uri,
+        selectedLanguage === 'auto' ? undefined : selectedLanguage
+      );
 
       if (response.transcription) {
         const transcriptionMessage: Message = {

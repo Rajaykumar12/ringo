@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 
-export type Language = 'en' | 'hi' | 'ta' | 'te';
+export type Language = 'en' | 'hi' | 'ta' | 'te' | 'auto';
 
 interface LanguageSelectorProps {
   selectedLanguage: Language;
@@ -16,6 +16,7 @@ interface LanguageSelectorProps {
 }
 
 const LANGUAGES: { code: Language; name: string; nativeName: string }[] = [
+  { code: 'auto', name: 'Auto-Detect', nativeName: '🌐 Auto' },
   { code: 'en', name: 'English', nativeName: 'English' },
   { code: 'hi', name: 'Hindi', nativeName: 'हिंदी' },
   { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
