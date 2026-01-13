@@ -4,11 +4,11 @@ A complete AI chat application with text and voice support, powered by Google Ge
 
 ## Features
 
-✅ **Text Chat** - Send messages and get AI responses  
-✅ **Voice Chat** - Record audio, get transcriptions and spoken responses  
-✅ **Multilingual** - English, Hindi, Tamil, Telugu support  
-✅ **RAG Pipeline** - AI answers only from your uploaded documents (PDF/PPTX)  
-✅ **Cross-platform** - Works on iOS, Android, and Web  
+- **Text Chat** - Send messages and get AI responses  
+- **Voice Chat** - Record audio, get transcriptions and spoken responses  
+- **Multilingual** - English, Hindi, Tamil, Telugu support  
+- **RAG Pipeline** - AI answers only from your uploaded documents (PDF/PPTX)  
+- **Cross-platform** - Works on iOS, Android, and Web  
 
 ## Quick Start
 
@@ -73,10 +73,16 @@ ADK/
 │
 └── frontend/
     ├── app/
+    │   ├── _layout.tsx      # Root layout
     │   └── index.tsx        # Main chat screen
-    ├── components/          # UI components
+    ├── components/
+    │   ├── chat-input.tsx   # Text input and voice button
+    │   ├── chat-messages.tsx # Message display
+    │   └── language-selector.tsx # Language picker
     ├── services/
-    │   └── api.ts          # API client (configure URL here)
+    │   └── api.ts           # API client (configure URL here)
+    ├── hooks/               # React hooks
+    ├── constants/           # Theme constants
     └── package.json
 ```
 
@@ -96,7 +102,7 @@ ADK/
 5. Response is spoken back
 
 ### Language Switching
-- Tap 🌐 button in header
+- Tap language button in header
 - Select: English, Hindi (हिंदी), Tamil (தமிழ்), or Telugu (తెలుగు)
 - All interactions use selected language
 
