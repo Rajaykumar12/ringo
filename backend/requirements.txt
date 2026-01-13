@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+google-genai==1.0.0
+chromadb==0.5.23
+pypdf==5.1.0
+python-pptx==1.0.2
+sentence-transformers==3.3.1
+python-dotenv==1.0.1
