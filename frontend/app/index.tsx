@@ -13,7 +13,7 @@ import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
-import { Message, sendTextMessage, sendAudioMessage } from '@/services/api';
+import { Message, sendTextMessage, sendAudioMessage, AudioChatResponse } from '@/services/api';
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -119,10 +119,10 @@ export default function ChatScreen() {
 
       const response = await sendAudioMessage(uri, selectedLanguage);
 
-      if (response.user_transcription) {
+      if (response.transcription) {
         const transcriptionMessage: Message = {
           id: (Date.now() + 1).toString(),
-          text: `You said: "${response.user_transcription}"`,
+          text: `You said: "${response.transcription}"`,
           sender: 'user',
           timestamp: new Date(),
         };
@@ -131,16 +131,24 @@ export default function ChatScreen() {
 
       const aiMessage: Message = {
         id: (Date.now() + 2).toString(),
-        text: response.response,
+        text: response.responseText,
         sender: 'ai',
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, aiMessage]);
 
-      Speech.speak(response.response, {
-        language: selectedLanguage === 'en' ? 'en-US' : 
-                  selectedLanguage === 'hi' ? 'hi-IN' :
-                  selectedLanguage === 'ta' ? 'ta-IN' : 'te-IN',
+      // Play the audio response
+      const sound = new Audio.Sound();
+      const audioUrl = URL.createObjectURL(response.audioBlob);
+      await sound.loadAsync({ uri: audioUrl });
+      await sound.playAsync();
+      
+      // Clean up
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+          URL.revokeObjectURL(audioUrl);
+        }
       });
     } catch (error) {
       console.error('Error sending audio:', error);

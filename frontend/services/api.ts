@@ -23,6 +23,14 @@ export interface ChatResponse {
   response: string;
   language: string;
   user_transcription?: string;
+  audio_available?: boolean;
+}
+
+export interface AudioChatResponse {
+  audioBlob: Blob;
+  transcription: string;
+  responseText: string;
+  language: string;
 }
 
 export const sendTextMessage = async (
@@ -40,7 +48,7 @@ export const sendTextMessage = async (
 export const sendAudioMessage = async (
   audioUri: string,
   language: string = 'en'
-): Promise<ChatResponse> => {
+): Promise<AudioChatResponse> => {
   const formData = new FormData();
   
   // For web, we need to fetch the blob first
@@ -60,10 +68,22 @@ export const sendAudioMessage = async (
   
   formData.append('language', language);
 
-  const response = await api.post<ChatResponse>('/chat/audio', formData, {
+  const response = await api.post('/chat/audio', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
+    responseType: 'blob', // Expect binary audio response
   });
-  return response.data;
+  
+  // Extract metadata from headers
+  const transcription = response.headers['x-transcription'] || '';
+  const responseText = response.headers['x-response-text'] || '';
+  const responseLang = response.headers['x-language'] || language;
+  
+  return {
+    audioBlob: response.data,
+    transcription,
+    responseText,
+    language: responseLang,
+  };
 };

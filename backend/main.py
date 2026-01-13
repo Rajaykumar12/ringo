@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from google import genai
 from google.genai import types
@@ -48,9 +48,9 @@ async def startup_event():
 # --- LANGUAGE CONFIGS ---
 LANGUAGE_PROMPTS = {
     "en": "English",
-    "hi": "Hindi (हिंदी)",
-    "ta": "Tamil (தமிழ்)",
-    "te": "Telugu (తెలుగు)",
+    "hi": "Hindi",
+    "ta": "Tamil",
+    "te": "Telugu",
 }
 
 # --- SYSTEM INSTRUCTION ---
@@ -222,13 +222,49 @@ async def audio_chat(
         else:
             reply_text = "Information not available in internal documents."
         
-        return JSONResponse(content={
-            "success": True,
-            "user_transcription": user_text,
-            "response": reply_text,
-            "language": language,
-            "note": "Use device TTS for audio playback"
-        })
+        # Step 3: Generate audio response using Gemini
+        audio_response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=f"Generate audio for: {reply_text}",
+            config=types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=types.SpeechConfig(
+                    voice_config=types.VoiceConfig(
+                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                            voice_name="Aoede"
+                        )
+                    )
+                )
+            )
+        )
+        
+        # Extract audio bytes from response
+        audio_data = None
+        for part in audio_response.candidates[0].content.parts:
+            if part.inline_data and part.inline_data.mime_type.startswith("audio/"):
+                audio_data = part.inline_data.data
+                break
+        
+        if not audio_data:
+            # Fallback to text response if audio generation fails
+            return JSONResponse(content={
+                "success": True,
+                "user_transcription": user_text,
+                "response": reply_text,
+                "language": language,
+                "audio_available": False
+            })
+        
+        # Return audio response
+        return Response(
+            content=audio_data,
+            media_type="audio/wav",
+            headers={
+                "X-Transcription": user_text,
+                "X-Response-Text": reply_text,
+                "X-Language": language
+            }
+        )
         
     except Exception as e:
         print(f"Error in audio_chat: {e}")
