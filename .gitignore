@@ -20,7 +20,7 @@ chroma/
 *.sqlite
 
 backend/documents/*
-!backend/documents/readme.md
+!backend/documents/instruction.md
 
 
 # Documents (optional - uncomment if you don't want to commit docs)
