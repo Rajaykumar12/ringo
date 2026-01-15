@@ -1,81 +1,102 @@
+
 # Multilingual AI Chat System
 
-A robust, fully open-source AI chat application with text and voice support.
-Migrated from Google Gemini to a high-performance open-source stack using **Groq (Llama 3)**, **HuggingFace**, and **OpenAI Whisper**.
+> A fully open-source, cross-platform AI chat application supporting both text and voice, built with modern, high-performance open-source technologies.
 
-Built with **Expo (React Native)** for the frontend and **FastAPI** for the backend.
+---
+
+## ✨ Overview
+
+This project delivers a robust AI chat experience with multilingual support, leveraging:
+
+- **Groq (Llama 3.3-70b)** for blazing-fast, free text generation
+- **HuggingFace** (`all-MiniLM-L6-v2`) for local, unlimited semantic embeddings
+- **OpenAI Whisper** for accurate, local audio transcription
+- **langdetect** for local language detection
+
+Frontend: **Expo (React Native)**  
+Backend: **FastAPI**
+
+---
 
 ## 🚀 Features
 
-- **Y-Shaped Architecture**: Unified pipeline for both Text and Audio inputs.
-- **Open-Source Stack**:
-    - **Text Gen**: [Groq](https://groq.com) (Llama 3.3-70b) - Blazing fast & Free.
-    - **Embeddings**: [HuggingFace](https://huggingface.co) (`all-MiniLM-L6-v2`) - Local & Unlimited.
-    - **Transcription**: [OpenAI Whisper](https://github.com/openai/whisper) - Local & Accurate.
-    - **Language Detect**: `langdetect` library - Local.
-- **RAG System**: Professional-grade Retrieval Augmented Generation using FAISS vector store.
-- **Multilingual**: Supports English, Hindi, Tamil, Telugu.
-- **Cross-platform**: iOS, Android, and Web.
+- **Y-Shaped Pipeline**: Unified processing for both text and audio inputs
+- **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using FAISS vector store
+- **Multilingual**: Supports English, Hindi, Tamil, and Telugu
+- **Cross-Platform**: Works on iOS, Android, and Web
+- **Local & Open Source**: No vendor lock-in, unlimited usage
+- **Easy Extensibility**: Add new languages or document sources easily
 
-## 🛠️ Architecture
+---
 
-The backend implements a 4-stage Y-shaped pipeline:
+## 🏗️ Architecture
 
-1.  **Input Processing**:
-    *   **Stage 1a (Text)**: Preprocessing & cleaning.
-    *   **Stage 1b (Audio)**: Transcription via local Whisper model.
-2.  **Query Refiner (Stage 2)**: Language detection & unified query formatting.
-3.  **RAG Retriever (Stage 3)**: Semantic search using HuggingFace embeddings & FAISS.
-4.  **Response Generator (Stage 4)**: Final answer generation using Groq API.
+The backend implements a modular, 4-stage Y-shaped pipeline:
 
-## 📦 Quick Start
+1. **Input Processing**
+    - **Text**: Preprocessing and cleaning
+    - **Audio**: Transcription via local Whisper model
+2. **Query Refinement**
+    - Language detection and unified query formatting
+3. **RAG Retrieval**
+    - Semantic search using HuggingFace embeddings and FAISS
+4. **Response Generation**
+    - Final answer generation using Groq API
 
-### 1. Backend Setup
+---
+
+## ⚡ Quick Start
+
+### Backend Setup
 
 ```bash
 cd backend
-
 # Install dependencies (Python 3.10+)
 pip install -r requirements.txt
 
-# Create .env file
+# Create .env file with your Groq API key
 echo "GROQ_API_KEY=your_groq_api_key_here" > .env
-# Get free API key from: https://console.groq.com/keys
+# Get a free API key: https://console.groq.com/keys
 
-# Add documents (Optional)
-# Copy PDF or PPTX files to backend/documents/ folder
+# (Optional) Add documents for RAG
+# Place PDF or PPTX files in backend/documents/
 
-# Start server
+# Start the FastAPI server
 python main.py
 ```
 
-Server runs on `http://localhost:8000`
+Server runs at: [http://localhost:8000](http://localhost:8000)
 
-### 2. Frontend Setup
+---
+
+### Frontend Setup
 
 ```bash
 cd frontend
-
 # Install dependencies
 npm install
 
-# Configure API URL in frontend/services/api.ts if testing on device:
+# (Optional) Configure API URL for device testing
+# Edit frontend/services/api.ts:
 # export const API_BASE_URL = 'http://YOUR_LOCAL_IP:8000';
 
-# Start app
+# Start the Expo app
 npm start
 ```
 
-## 📂 Project Structure
+---
+
+## 🗂️ Project Structure
 
 ```
 ADK/
 ├── backend/
-│   ├── main.py              # FastAPI server (Lifespan managed)
+│   ├── main.py              # FastAPI server (lifespan managed)
 │   ├── pipeline.py          # Y-shaped pipeline orchestrator
-│   ├── langchain_rag.py     # RAG Entine (Groq + HuggingFace)
-│   ├── requirements.txt     # Dependencies
-│   └── documents/           # Knowledge base files
+│   ├── langchain_rag.py     # RAG engine (Groq + HuggingFace)
+│   ├── requirements.txt     # Python dependencies
+│   └── documents/           # Knowledge base files (PDF/PPTX)
 │
 └── frontend/
     ├── app/
@@ -84,10 +105,31 @@ ADK/
     ├── components/
     │   ├── chat-input.tsx   # Input & recording logic
     │   ├── chat-messages.tsx # Message list display
-    │   └── language-selector.tsx # Language string picker
+    │   └── language-selector.tsx # Language picker
     ├── services/
     │   └── api.ts           # API client
     ├── hooks/               # Custom React hooks
     ├── constants/           # App constants
     └── assets/              # Static assets
 ```
+
+---
+
+## 📝 License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+## 🙌 Acknowledgements
+
+- [Groq](https://groq.com)
+- [HuggingFace](https://huggingface.co)
+- [OpenAI Whisper](https://github.com/openai/whisper)
+- [langdetect](https://pypi.org/project/langdetect/)
+
+---
+
+## 💡 Contributing
+
+Pull requests and issues are welcome! For major changes, please open an issue first to discuss what you would like to change.
