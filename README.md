@@ -5,7 +5,7 @@
 
 ---
 
-## ✨ Overview
+## Overview
 
 This project delivers a robust AI chat experience with multilingual support, leveraging:
 
@@ -19,7 +19,7 @@ Backend: **FastAPI**
 
 ---
 
-## 🚀 Features
+## Features
 
 - **Y-Shaped Pipeline**: Unified processing for both text and audio inputs
 - **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using FAISS vector store
@@ -30,7 +30,7 @@ Backend: **FastAPI**
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 The backend implements a modular, 4-stage Y-shaped pipeline:
 
@@ -46,7 +46,7 @@ The backend implements a modular, 4-stage Y-shaped pipeline:
 
 ---
 
-## ⚡ Quick Start
+## Quick Start
 
 ### Backend Setup
 
@@ -87,7 +87,7 @@ npm start
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 ADK/
@@ -115,13 +115,13 @@ ADK/
 
 ---
 
-## 📝 License
+## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ---
 
-## 🙌 Acknowledgements
+## Acknowledgements
 
 - [Groq](https://groq.com)
 - [HuggingFace](https://huggingface.co)
@@ -130,6 +130,6 @@ This project is licensed under the MIT License. See [LICENSE](LICENSE) for detai
 
 ---
 
-## 💡 Contributing
+## Contributing
 
 Pull requests and issues are welcome! For major changes, please open an issue first to discuss what you would like to change.
