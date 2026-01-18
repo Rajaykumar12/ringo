@@ -14,18 +14,18 @@ env/
 ENV/
 .venv
 
-backend/documents/*
-
-!backend/documents/README.md
-
 # ChromaDB
 chroma/
 *.db
 *.sqlite
 
+backend/documents/*
+!backend/documents/instruction.md
+
+
 # Documents (optional - uncomment if you don't want to commit docs)
-# backend/documents/*.pdf
-# backend/documents/*.pptx
+backend/documents/*.pdf
+backend/documents/*.pptx
 
 # Node
 node_modules/

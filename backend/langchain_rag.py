@@ -71,15 +71,6 @@ class LangChainRAG:
     def setup_rag_chain(self, language: str = "en"):
         if not self.vectorstore: return
         
-        # Map codes to full names for better LLM adherence
-        lang_map = {
-            'en': 'English',
-            'hi': 'Hindi', 
-            'ta': 'Tamil',
-            'te': 'Telugu'
-        }
-        full_language = lang_map.get(language, 'English')
-        
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
         
         # Multilingual Prompt
@@ -95,7 +86,7 @@ Context:
 Question: {question}""")
         
         self.rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough(), "language": lambda x: full_language}
+            {"context": retriever, "question": RunnablePassthrough(), "language": lambda x: language}
             | prompt | self.llm | StrOutputParser()
         )
 
