@@ -85,6 +85,9 @@ npm install
 npm start
 ```
 
+Client runs at: [http://localhost:8081](http://localhost:8081)
+
+
 ---
 
 ### Docker Setup (Recommended)
