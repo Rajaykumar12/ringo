@@ -95,7 +95,7 @@ class ResponseGenerator:
     
     def generate_audio(self, retrieval_result: Dict[str, Any]) -> Optional[bytes]:
         # Audio generation skipped (Gemini removed)
-        print("⚠️ Audio generation skipped")
+        print("Audio generation skipped")
         return None
 
 class PipelineOrchestrator:
