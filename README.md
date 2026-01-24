@@ -13,6 +13,7 @@ This project delivers a robust AI chat experience with multilingual support, lev
 - **HuggingFace** (`all-MiniLM-L6-v2`) for local, unlimited semantic embeddings
 - **OpenAI Whisper** for accurate, local audio transcription
 - **langdetect** for local language detection
+- **edge-tts** for high-quality TTS generation
 
 Frontend: **Expo (React Native)**  
 Backend: **FastAPI**
@@ -24,6 +25,8 @@ Backend: **FastAPI**
 - **Y-Shaped Pipeline**: Unified processing for both text and audio inputs
 - **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using FAISS vector store
 - **Multilingual**: Supports English, Hindi, Tamil, and Telugu
+- **On-Demand TTS**: High-quality voice generation using `edge-tts`
+- **Smart Caching**: Audio caching to prevent redundant generation
 - **Cross-Platform**: Works on iOS, Android, and Web
 - **Local & Open Source**: No vendor lock-in, unlimited usage
 - **Easy Extensibility**: Add new languages or document sources easily
@@ -43,6 +46,17 @@ The backend implements a modular, 4-stage Y-shaped pipeline:
     - Semantic search using HuggingFace embeddings and FAISS
 4. **Response Generation**
     - Final answer generation using Groq API
+5. **Audio Output**: On-demand TTS generation with caching strategy
+
+---
+
+## TTS Implementation
+
+The project features a robust Text-to-Speech system designed for performance and quality:
+
+- **Engine**: Uses `edge-tts` for natural, high-quality neural voice synthesis.
+- **On-Demand Generation**: Audio is only generated when the user requests it (clicks play), saving resources.
+- **Security**: Secure file serving ensures only valid, generated audio files are accessible.
 
 ---
 
