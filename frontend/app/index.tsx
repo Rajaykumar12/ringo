@@ -13,7 +13,7 @@ import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
-import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse } from '@/services/api';
+import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -22,6 +22,105 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
   const [useStreaming, setUseStreaming] = useState(false);
+
+  // Audio playback state
+  const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
+  const [currentSound, setCurrentSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isGeneratingTTS, setIsGeneratingTTS] = useState(false);
+
+  // Audio control functions
+  const playMessageAudio = async (messageId: string, messageText: string, messageLang: string, cachedAudioData?: string) => {
+    try {
+      let audioData = cachedAudioData;
+
+      // If no cached audio, generate it on-demand
+      if (!audioData) {
+        setIsGeneratingTTS(true);
+        setPlayingMessageId(messageId); // Show loading state
+
+        try {
+          const ttsResponse = await generateTTS(messageText, messageLang);
+          audioData = ttsResponse.audio_data || undefined;
+
+          if (!audioData) {
+            Alert.alert('Error', 'Failed to generate audio');
+            setIsGeneratingTTS(false);
+            setPlayingMessageId(null);
+            return;
+          }
+
+          // Cache the audio in the message
+          setMessages(prev => prev.map(msg =>
+            msg.id === messageId
+              ? { ...msg, audio_data: audioData, audio_available: true }
+              : msg
+          ));
+        } catch (error) {
+          console.error('TTS generation failed:', error);
+          Alert.alert('Error', 'Failed to generate audio');
+          setIsGeneratingTTS(false);
+          setPlayingMessageId(null);
+          return;
+        } finally {
+          setIsGeneratingTTS(false);
+        }
+      }
+
+      // Stop current audio if any
+      if (currentSound) {
+        await currentSound.stopAsync();
+        await currentSound.unloadAsync();
+        setCurrentSound(null);
+      }
+
+      // Convert base64 to blob
+      const binaryString = atob(audioData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: 'audio/mp3' });
+      const audioUrl = URL.createObjectURL(blob);
+
+      // Create and play new audio
+      const sound = new Audio.Sound();
+      await sound.loadAsync({ uri: audioUrl });
+      setCurrentSound(sound);
+      setPlayingMessageId(messageId);
+      setIsPlaying(true);
+      await sound.playAsync();
+
+      // Handle playback completion
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          setIsPlaying(false);
+          setPlayingMessageId(null);
+          sound.unloadAsync();
+          URL.revokeObjectURL(audioUrl);
+          setCurrentSound(null);
+        }
+      });
+    } catch (error) {
+      console.error('Error playing audio:', error);
+      Alert.alert('Error', 'Failed to play audio');
+      setIsGeneratingTTS(false);
+    }
+  };
+
+  const pauseMessageAudio = async () => {
+    if (currentSound) {
+      await currentSound.pauseAsync();
+      setIsPlaying(false);
+    }
+  };
+
+  const resumeMessageAudio = async () => {
+    if (currentSound) {
+      await currentSound.playAsync();
+      setIsPlaying(true);
+    }
+  };
 
   // Handle text message send
   const handleSendText = async (text: string) => {
@@ -81,22 +180,15 @@ export default function ChatScreen() {
           selectedLanguage === 'auto' ? undefined : selectedLanguage
         );
 
-        // Add AI response
+        // Add AI response (no audio data - will be generated on-demand)
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           text: response.response,
           sender: 'ai',
           timestamp: new Date(),
+          language: response.language,
         };
         setMessages((prev) => [...prev, aiMessage]);
-
-        // Speak the response
-        const lang = response.language || selectedLanguage;
-        Speech.speak(response.response, {
-          language: lang === 'en' ? 'en-US' :
-            lang === 'hi' ? 'hi-IN' :
-              lang === 'ta' ? 'ta-IN' : 'te-IN',
-        });
       }
     } catch (error) {
       console.error('Error sending text:', error);
@@ -183,32 +275,9 @@ export default function ChatScreen() {
         text: response.responseText,
         sender: 'ai',
         timestamp: new Date(),
+        language: response.language,
       };
       setMessages((prev) => [...prev, aiMessage]);
-
-      // Only try to play audio if we actually received audio data
-      if (response.audioBlob && response.audioBlob.size > 0) {
-        const sound = new Audio.Sound();
-        const audioUrl = URL.createObjectURL(response.audioBlob);
-        await sound.loadAsync({ uri: audioUrl });
-        await sound.playAsync();
-
-        // Clean up
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync();
-            URL.revokeObjectURL(audioUrl);
-          }
-        });
-      } else {
-        // Fallback: Use device TTS if backend didn't send audio
-        const lang = response.language || (selectedLanguage === 'auto' ? 'en' : selectedLanguage) || 'en';
-        Speech.speak(response.responseText, {
-          language: lang === 'en' ? 'en-US' :
-            lang === 'hi' ? 'hi-IN' :
-              lang === 'ta' ? 'ta-IN' : 'te-IN',
-        });
-      }
     } catch (error) {
       console.error('Error sending audio:', error);
       Alert.alert('Error', 'Failed to send audio. Check your connection and API URL.');
@@ -233,7 +302,15 @@ export default function ChatScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <ChatMessages messages={messages} />
+        <ChatMessages
+          messages={messages}
+          onPlayAudio={playMessageAudio}
+          onPauseAudio={pauseMessageAudio}
+          onResumeAudio={resumeMessageAudio}
+          playingMessageId={playingMessageId}
+          isPlaying={isPlaying}
+          isGeneratingTTS={isGeneratingTTS}
+        />
         <ChatInput
           onSendText={handleSendText}
           onSendAudio={handleSendAudio}

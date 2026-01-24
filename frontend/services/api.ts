@@ -16,6 +16,9 @@ export interface Message {
   sender: 'user' | 'ai';
   timestamp: Date;
   isAudio?: boolean;
+  audio_data?: string;
+  audio_available?: boolean;
+  language?: string;
 }
 
 export interface ChatResponse {
@@ -23,11 +26,9 @@ export interface ChatResponse {
   response: string;
   language: string;
   user_transcription?: string;
-  audio_available?: boolean;
 }
 
 export interface AudioChatResponse {
-  audioBlob: Blob;
   transcription: string;
   responseText: string;
   language: string;
@@ -126,17 +127,28 @@ export const sendAudioMessage = async (
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-    // Changed: Expect JSON response not blob, as we removed audio generation
     responseType: 'json',
   });
 
-  // Backend now returns JSON with text response and transcription
+  // Backend returns JSON with text response and transcription (no audio)
   const data = response.data;
 
   return {
-    audioBlob: new Blob(), // Empty blob as no audio is generated
     transcription: data.transcription || '',
     responseText: data.response || '',
     language: data.language || language || 'en',
   };
+};
+
+// Generate TTS audio on-demand
+export const generateTTS = async (
+  text: string,
+  language: string
+): Promise<{ audio_data: string | null; audio_available: boolean }> => {
+  const formData = new FormData();
+  formData.append('text', text);
+  formData.append('language', language);
+
+  const response = await api.post('/tts/generate', formData);
+  return response.data;
 };
