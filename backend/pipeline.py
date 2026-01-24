@@ -93,10 +93,65 @@ class ResponseGenerator:
             "query": retrieval_result["query"]
         }
     
-    def generate_audio(self, retrieval_result: Dict[str, Any]) -> Optional[bytes]:
-        # Audio generation skipped (Gemini removed)
-        print("Audio generation skipped")
-        return None
+    def generate_audio(self, retrieval_result: Dict[str, Any]) -> Optional[str]:
+        """Generate audio from text response using edge-tts and return base64-encoded audio."""
+        try:
+            import edge_tts
+            import asyncio
+            import tempfile
+            import base64
+            from concurrent.futures import ThreadPoolExecutor
+            
+            text = retrieval_result["response"]
+            language = retrieval_result["language"]
+            
+            # Map language codes to edge-tts voice names (neural voices)
+            voice_map = {
+                "en": "en-US-ChristopherNeural",      # English (US) - Female
+                "hi": "hi-IN-SwaraNeural",     # Hindi (India) - Female
+                "ta": "ta-IN-PallaviNeural",   # Tamil (India) - Female
+                "te": "te-IN-ShrutiNeural"     # Telugu (India) - Female
+            }
+            voice = voice_map.get(language, "en-US-AriaNeural")
+            
+            # Create temporary file for audio
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio:
+                temp_audio_path = temp_audio.name
+            
+            try:
+                # Generate TTS using edge-tts (async)
+                async def generate_tts():
+                    communicate = edge_tts.Communicate(text, voice)
+                    await communicate.save(temp_audio_path)
+                
+                # Run async function in a separate thread to avoid event loop conflicts
+                def run_in_thread():
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(generate_tts())
+                    finally:
+                        loop.close()
+                
+                with ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    future.result()  # Wait for completion
+                
+                # Read and encode as base64
+                with open(temp_audio_path, "rb") as audio_file:
+                    audio_bytes = audio_file.read()
+                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                
+                print(f"✓ Edge-TTS generated for language: {language} (voice: {voice})")
+                return audio_base64
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_audio_path):
+                    os.remove(temp_audio_path)
+                    
+        except Exception as e:
+            print(f"⚠️ Edge-TTS generation failed: {e}")
+            return None
 
 class PipelineOrchestrator:
     # Main pipeline controller
@@ -107,20 +162,14 @@ class PipelineOrchestrator:
         self.rag_retriever = RAGRetriever()
         self.response_generator = ResponseGenerator()
     
-    def process_text(self, text: str, language: Optional[str] = None) -> Dict[str, Any]:
+    def process_text(self, text: str, language: Optional[str] = None, return_audio: bool = False) -> Dict[str, Any]:
+        """Process text input through the pipeline."""
         stage1 = self.text_processor.process(text)
         stage2 = self.query_refiner.refine(stage1, language)
         stage3 = self.rag_retriever.retrieve(stage2)
-        return self.response_generator.generate(stage3)
-
-    def process_audio(self, audio_bytes: bytes, mime_type: str = "audio/wav", language: Optional[str] = None) -> Dict[str, Any]:
-        stage1 = self.audio_processor.process(audio_bytes, mime_type)
-        stage2 = self.query_refiner.refine(stage1, language)
-        stage3 = self.rag_retriever.retrieve(stage2)
-        return self.response_generator.generate(stage3)
+        final_output = self.response_generator.generate(stage3)
         
-        # Stage 4: Response generation
-        final_output = self.response_generator.generate(stage3_output)
+        # No automatic TTS generation - will be done on-demand via /tts/generate endpoint
         
         return final_output
     
@@ -129,7 +178,7 @@ class PipelineOrchestrator:
         audio_bytes: bytes, 
         mime_type: str = "audio/wav",
         language: Optional[str] = None,
-        return_audio: bool = True
+        return_audio: bool = False
     ) -> Dict[str, Any]:
         """
         Process audio input through the pipeline.
@@ -151,10 +200,6 @@ class PipelineOrchestrator:
         # Add transcription to output
         final_output["transcription"] = stage1_output["text"]
         
-        # Generate audio if requested
-        if return_audio:
-            audio_data = self.response_generator.generate_audio(stage3_output)
-            final_output["audio_data"] = audio_data
-            final_output["audio_available"] = audio_data is not None
+        # No automatic TTS generation - will be done on-demand via /tts/generate endpoint
         
         return final_output

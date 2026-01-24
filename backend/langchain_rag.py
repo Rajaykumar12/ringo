@@ -73,6 +73,15 @@ class LangChainRAG:
         
         retriever = self.vectorstore.as_retriever(search_kwargs={"k": 5})
         
+        # Map language codes to full names for better LLM understanding
+        language_map = {
+            "en": "English",
+            "hi": "Hindi",
+            "ta": "Tamil",
+            "te": "Telugu"
+        }
+        language_name = language_map.get(language, "English")
+        
         # Multilingual Prompt
         prompt = ChatPromptTemplate.from_template("""You are a helpful AI assistant. Use context to answer.
 IMPORTANT:
@@ -86,7 +95,7 @@ Context:
 Question: {question}""")
         
         self.rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough(), "language": lambda x: language}
+            {"context": retriever, "question": RunnablePassthrough(), "language": lambda x: language_name}
             | prompt | self.llm | StrOutputParser()
         )
 

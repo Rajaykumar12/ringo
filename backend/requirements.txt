@@ -1,12 +1,7 @@
-# 1. Point to the CPU-only PyTorch repository
 --extra-index-url https://download.pytorch.org/whl/cpu
-
-# 2. Install PyTorch CPU components explicitly first
 torch
 torchvision
 torchaudio
-
-# 3. Your libraries (dependencies will now use the CPU torch installed above)
 fastapi
 uvicorn[standard]
 python-multipart
@@ -21,3 +16,4 @@ openai-whisper
 sentence-transformers
 langdetect
 langchain-groq
+edge-tts

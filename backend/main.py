@@ -71,8 +71,8 @@ async def text_chat(
     stream: bool = Form(False)
 ):
     try:
-        # Processing text through Y-shaped pipeline
-        return JSONResponse(content=pipeline.process_text(message, language))
+        # Processing text through Y-shaped pipeline (no auto TTS)
+        return JSONResponse(content=pipeline.process_text(message, language, return_audio=False))
     except Exception as e:
         print(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -81,20 +81,44 @@ async def text_chat(
 async def audio_chat(
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
-    stream: bool = Form(False),
-    return_audio: bool = Form(True)
+    stream: bool = Form(False)
 ):
     try:
         print(f"Audio received: {file.filename}")
         audio_bytes = await file.read()
         if not audio_bytes: raise HTTPException(400, "Empty file")
         
-        # Processing audio through Y-shaped pipeline
-        result = pipeline.process_audio(audio_bytes, file.content_type or "audio/wav", language)
+        # Processing audio through Y-shaped pipeline (no auto TTS)
+        result = pipeline.process_audio(audio_bytes, file.content_type or "audio/wav", language, return_audio=False)
         return JSONResponse(content=result)
         
     except Exception as e:
         print(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/tts/generate")
+async def generate_tts(
+    text: str = Form(...),
+    language: str = Form("en")
+):
+    """Generate TTS audio on-demand when user clicks play button."""
+    try:
+        # Create a minimal retrieval result for TTS generation
+        retrieval_result = {
+            "response": text,
+            "language": language
+        }
+        
+        # Generate audio using existing method
+        audio_data = pipeline.response_generator.generate_audio(retrieval_result)
+        
+        return JSONResponse(content={
+            "success": True,
+            "audio_data": audio_data,
+            "audio_available": audio_data is not None
+        })
+    except Exception as e:
+        print(f"TTS Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
