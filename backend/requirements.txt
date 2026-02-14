@@ -17,3 +17,4 @@ sentence-transformers
 langdetect
 langchain-groq
 edge-tts
+azure-storage-blob

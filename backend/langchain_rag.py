@@ -13,11 +13,57 @@ from pptx import Presentation
 
 load_dotenv()
 
+
+def sync_documents_from_blob(local_folder: str = "documents"):
+    """Download documents from Azure Blob Storage to local folder.
+    
+    Requires env vars:
+    - AZURE_STORAGE_CONNECTION_STRING: From Azure Portal → Storage Account → Access keys
+    - AZURE_STORAGE_CONTAINER_NAME: Blob container name (default: 'documents')
+    
+    Falls back to local documents/ folder if not configured (for local dev).
+    """
+    connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    container_name = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "documents")
+    
+    if not connection_string:
+        print("ℹ️  AZURE_STORAGE_CONNECTION_STRING not set — using local documents/ folder")
+        return
+    
+    try:
+        from azure.storage.blob import ContainerClient
+        
+        os.makedirs(local_folder, exist_ok=True)
+        container_client = ContainerClient.from_connection_string(connection_string, container_name)
+        
+        blob_list = list(container_client.list_blobs())
+        print(f"📥 Found {len(blob_list)} file(s) in Azure Blob Storage '{container_name}'")
+        
+        for blob in blob_list:
+            local_path = os.path.join(local_folder, blob.name)
+            # Skip if already downloaded and same size
+            if os.path.exists(local_path) and os.path.getsize(local_path) == blob.size:
+                print(f"  ✓ Already up to date: {blob.name}")
+                continue
+            
+            print(f"  ⬇ Downloading: {blob.name} ({blob.size} bytes)")
+            blob_data = container_client.download_blob(blob.name).readall()
+            with open(local_path, "wb") as f:
+                f.write(blob_data)
+        
+        print("✓ Azure Blob Storage sync complete")
+    except Exception as e:
+        print(f"⚠️ Azure Blob sync failed: {e}. Falling back to local documents/")
+
+
 class LangChainRAG:
     # LangChain-based RAG using Groq (LLM) and HuggingFace (Embeddings)
     def __init__(self, documents_folder: str = "documents"):
         self.documents_folder, self.groq_api_key = documents_folder, os.environ.get("GROQ_API_KEY")
         if not self.groq_api_key: raise ValueError("GROQ_API_KEY missing!")
+        
+        # Sync documents from Azure Blob Storage (skipped if not configured)
+        sync_documents_from_blob(self.documents_folder)
         
         # Initialize embeddings (HuggingFace, local, free)
         from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -51,6 +97,12 @@ class LangChainRAG:
                         for shape in slide.shapes:
                             if hasattr(shape, "text"): text += shape.text + "\n"
                     documents.append(Document(page_content=text, metadata={"source": filename, "type": "pptx"}))
+                    print(f"Loaded: {filename}")
+                # Load Markdown
+                elif filename.endswith(".md"):
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        text = f.read()
+                    documents.append(Document(page_content=text, metadata={"source": filename, "type": "markdown"}))
                     print(f"Loaded: {filename}")
             except Exception as e: print(f"Error loading {filename}: {e}")
         return documents
