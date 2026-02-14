@@ -26,7 +26,6 @@ Backend: **FastAPI**
 - **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using FAISS vector store
 - **Multilingual**: Supports English, Hindi, Tamil, and Telugu
 - **On-Demand TTS**: High-quality voice generation using `edge-tts`
-- **Smart Caching**: Audio caching to prevent redundant generation
 - **Cross-Platform**: Works on iOS, Android, and Web
 - **Local & Open Source**: No vendor lock-in, unlimited usage
 - **Easy Extensibility**: Add new languages or document sources easily
