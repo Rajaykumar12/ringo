@@ -1,9 +1,9 @@
 import axios from 'axios';
 
 // Update this to your backend URL
-// For local development: use your machine's IP address (not localhost)
-// e.g., "http://192.168.1.100:8000" or use ngrok for public URL
-export const API_BASE_URL = 'http://localhost:8000'; // Change this!
+// For Azure: set EXPO_PUBLIC_API_URL env var during docker build
+// For local dev: defaults to localhost:8000
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
