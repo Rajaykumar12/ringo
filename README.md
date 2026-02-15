@@ -1,4 +1,3 @@
-
 # Multilingual AI Chat System
 
 > A fully open-source, cross-platform AI chat application supporting both text and voice, built with modern, high-performance open-source technologies.
@@ -149,6 +148,16 @@ ADK/
     ├── constants/           # App constants
     └── assets/              # Static assets
 ```
+
+---
+
+## Deployment
+
+This project is deployed on **Azure Container Apps** using:
+- **Azure Blob Storage** for dynamic document management (RAG knowledge base)
+- **Azure Container Registry** for secure image hosting
+
+The backend and frontend are containerized and run as separate services within the same Azure Container Apps environment, ensuring scalability and reliability. Documents for retrieval-augmented generation are managed through Azure Blob Storage, allowing updates without redeploying the application.
 
 ---
 
