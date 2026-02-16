@@ -100,36 +100,58 @@ class LangChainRAG:
                 text = ""
                 # Load PDF
                 if filename.endswith(".pdf"):
-                    for page in PdfReader(filepath).pages: text += page.extract_text() + "\n"
-                    documents.append(Document(page_content=text, metadata={"source": filename, "type": "pdf"}))
-                    print(f"Loaded: {filename}")
+                    for page in PdfReader(filepath).pages:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text += page_text + "\n"
+                    if text.strip():
+                        documents.append(Document(page_content=text.strip(), metadata={"source": filename, "type": "pdf"}))
+                        print(f"Loaded: {filename} ({len(text)} chars)")
+                    else:
+                        print(f"⚠️ Skipping {filename}: no extractable text")
                 # Load PPTX
                 elif filename.endswith(".pptx"):
                     for slide in Presentation(filepath).slides:
                         for shape in slide.shapes:
-                            if hasattr(shape, "text"): text += shape.text + "\n"
-                    documents.append(Document(page_content=text, metadata={"source": filename, "type": "pptx"}))
-                    print(f"Loaded: {filename}")
+                            if hasattr(shape, "text") and shape.text:
+                                text += shape.text + "\n"
+                    if text.strip():
+                        documents.append(Document(page_content=text.strip(), metadata={"source": filename, "type": "pptx"}))
+                        print(f"Loaded: {filename} ({len(text)} chars)")
+                    else:
+                        print(f"⚠️ Skipping {filename}: no extractable text")
                 # Load Markdown
                 elif filename.endswith(".md"):
                     with open(filepath, "r", encoding="utf-8") as f:
                         text = f.read()
-                    documents.append(Document(page_content=text, metadata={"source": filename, "type": "markdown"}))
-                    print(f"Loaded: {filename}")
+                    if text.strip():
+                        documents.append(Document(page_content=text.strip(), metadata={"source": filename, "type": "markdown"}))
+                        print(f"Loaded: {filename} ({len(text)} chars)")
+                    else:
+                        print(f"⚠️ Skipping {filename}: empty file")
             except Exception as e: print(f"Error loading {filename}: {e}")
         return documents
     
     def create_vectorstore(self, documents: List[Document]):
-        if not documents: return
+        if not documents:
+            print("⚠️ No documents to index")
+            return
         try:
             # Chunking
             chunks = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(documents)
-            print(f"Created {len(chunks)} chunks")
+            # Filter out empty chunks that cause embedding errors
+            chunks = [c for c in chunks if c.page_content and c.page_content.strip()]
+            if not chunks:
+                print("⚠️ All chunks were empty after filtering")
+                return
+            print(f"Created {len(chunks)} chunks (after filtering)")
             # Indexing
             self.vectorstore = FAISS.from_documents(chunks, self.embeddings)
-            print("Vector store created")
+            print("✓ Vector store created successfully")
         except Exception as e:
             print(f"⚠️ Vector store creation failed: {e}")
+            import traceback
+            traceback.print_exc()
             self.vectorstore = None
         
     def setup_rag_chain(self, language: str = "en"):
