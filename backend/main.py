@@ -6,7 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from typing import Optional
 from dotenv import load_dotenv
 from pipeline import PipelineOrchestrator
-from langchain_rag import initialize_rag
+from langchain_rag import initialize_rag, refresh_documents
 
 from contextlib import asynccontextmanager
 
@@ -119,6 +119,19 @@ async def generate_tts(
         })
     except Exception as e:
         print(f"TTS Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/documents/refresh")
+async def refresh_docs():
+    """Refresh documents from Azure Blob Storage and rebuild vector store."""
+    try:
+        refresh_documents()
+        return JSONResponse(content={
+            "success": True,
+            "message": "Documents refreshed successfully"
+        })
+    except Exception as e:
+        print(f"Refresh Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

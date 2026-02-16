@@ -37,7 +37,16 @@ def sync_documents_from_blob(local_folder: str = "documents"):
         container_client = ContainerClient.from_connection_string(connection_string, container_name)
         
         blob_list = list(container_client.list_blobs())
+        blob_names = {blob.name for blob in blob_list}
         print(f"📥 Found {len(blob_list)} file(s) in Azure Blob Storage '{container_name}'")
+        
+        # Delete local files that no longer exist in blob storage
+        if os.path.exists(local_folder):
+            for local_file in os.listdir(local_folder):
+                if local_file not in blob_names:
+                    local_path = os.path.join(local_folder, local_file)
+                    print(f"  🗑️  Deleting orphaned file: {local_file}")
+                    os.remove(local_path)
         
         for blob in blob_list:
             local_path = os.path.join(local_folder, blob.name)
@@ -76,6 +85,9 @@ class LangChainRAG:
         self.vectorstore, self.rag_chain = None, None
         
     def load_documents(self) -> List[Document]:
+        # Re-sync from blob storage before loading
+        sync_documents_from_blob(self.documents_folder)
+        
         documents = []
         if not os.path.exists(self.documents_folder):
             os.makedirs(self.documents_folder)
@@ -158,6 +170,14 @@ def initialize_rag():
     global rag_system
     rag_system = LangChainRAG()
     rag_system.create_vectorstore(rag_system.load_documents())
+
+def refresh_documents():
+    """Refresh documents from blob storage and rebuild the vector store."""
+    global rag_system
+    if rag_system:
+        print("🔄 Refreshing documents from blob storage...")
+        rag_system.create_vectorstore(rag_system.load_documents())
+        print("✓ Documents refreshed successfully")
 
 def get_rag_response(query: str, language: str = "en") -> str:
     if not rag_system: initialize_rag()
