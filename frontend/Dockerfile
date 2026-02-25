@@ -11,6 +11,13 @@ COPY . .
 ARG EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
-# We force Expo to bind to LAN (0.0.0.0 equivalent) and disable the interactive terminal UI
-ENV CI=true
-CMD ["npx", "expo", "start", "--web", "--port", "8081", "--host", "lan"]
+RUN npx expo export --platform web
+
+# Serve with node and serve package
+FROM node:20-alpine
+WORKDIR /app
+RUN npm install -g serve
+COPY --from=build /app/dist ./dist
+
+EXPOSE 3000
+CMD ["serve", "-s", "dist", "-l", "3000"]
