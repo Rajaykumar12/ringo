@@ -42,3 +42,5 @@ jobs:
           containerAppName: adk-frontend
           resourceGroup: adk-rg
           imageToBuild: adkregistry123.azurecr.io/adk-frontend:${{ github.sha }}
+          dockerBuildArguments: |
+            EXPO_PUBLIC_API_URL=https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io
