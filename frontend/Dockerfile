@@ -14,4 +14,5 @@ ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 # Start the Expo web development server directly
 # Note: For production, this is heavily resource intensive but matches local development exactly
 EXPOSE 8081
-CMD ["npm", "run", "web"]
+# We bind to 0.0.0.0 so Azure can route traffic to it
+CMD ["npx", "expo", "start", "--web", "--port", "8081", "--host", "0.0.0.0"]
