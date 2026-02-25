@@ -5,9 +5,7 @@ import axios from 'axios';
 // For local dev: defaults to localhost:8000
 const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
 
-
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
-
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000,
