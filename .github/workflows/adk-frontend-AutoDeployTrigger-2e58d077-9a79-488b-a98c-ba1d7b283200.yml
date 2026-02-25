@@ -42,3 +42,7 @@ jobs:
           containerAppName: adk-frontend
           resourceGroup: adk-rg
           imageToBuild: adkregistry123.azurecr.io/adk-frontend:${{ github.sha }}
+          environmentVariables: |
+            EXPO_PUBLIC_API_URL=${{ secrets.EXPO_PUBLIC_API_URL }}
+          buildArguments: |
+            EXPO_PUBLIC_API_URL=${{ secrets.EXPO_PUBLIC_API_URL }}
