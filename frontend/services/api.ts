@@ -3,7 +3,9 @@ import axios from 'axios';
 // Update this to your backend URL
 // For Azure: set EXPO_PUBLIC_API_URL env var during docker build
 // For local dev: defaults to localhost:8000
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:8000';
+const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
+
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
