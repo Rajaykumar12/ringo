@@ -13,7 +13,7 @@ import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
-import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS, API_BASE_URL } from '@/services/api';
+import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -192,7 +192,7 @@ export default function ChatScreen() {
       }
     } catch (error) {
       console.error('Error sending text:', error);
-      Alert.alert('Error', `Failed to send message to ${API_BASE_URL}. Check your connection.`);
+      Alert.alert('Error', 'Failed to send message. Check your connection and API URL.');
     } finally {
       setIsLoading(false);
     }
@@ -280,7 +280,7 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error sending audio:', error);
-      Alert.alert('Error', `Failed to send audio to ${API_BASE_URL}. Check your connection.`);
+      Alert.alert('Error', 'Failed to send audio. Check your connection and API URL.');
     } finally {
       setIsLoading(false);
       setRecording(null);
