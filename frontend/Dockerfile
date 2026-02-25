@@ -7,8 +7,8 @@ RUN npm install
 
 COPY . .
 
-# Set your Azure backend URL here when building for deployment
-ARG EXPO_PUBLIC_API_URL=http://localhost:8000
+# Pass your Azure backend URL here when building for deployment
+ARG EXPO_PUBLIC_API_URL
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
 RUN npx expo export --platform web
