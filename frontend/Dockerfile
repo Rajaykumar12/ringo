@@ -7,17 +7,14 @@ RUN npm install
 
 COPY . .
 
-# Pass in the URL during build
-ARG EXPO_PUBLIC_API_URL
+# Set your Azure backend URL here when building for deployment
+ARG EXPO_PUBLIC_API_URL=http://localhost:8000
 ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
 
 RUN npx expo export --platform web
 
-# Serve with node and serve package
-FROM node:20-alpine
-WORKDIR /app
-RUN npm install -g serve
-COPY --from=build /app/dist ./dist
-
-EXPOSE 3000
-CMD ["serve", "-s", "dist", "-l", "3000"]
+# Serve with nginx for production
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
