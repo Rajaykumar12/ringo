@@ -1,7 +1,7 @@
 from typing import Optional, Dict, Any
 import os
 from dotenv import load_dotenv
-from langchain_rag import get_rag_response
+from rag import get_rag_response
 
 load_dotenv()
 
@@ -63,20 +63,23 @@ class QueryRefiner:
             return lang_map.get(detect(text), 'en')
         except: return "en"
     
-    def refine(self, processed_input: Dict[str, Any], language: Optional[str] = None) -> Dict[str, Any]:
+    def refine(self, processed_input: Dict[str, Any], language: Optional[str] = None, session_id: str = "default") -> Dict[str, Any]:
         text, source = processed_input["text"], processed_input["source"]
         if not language or language not in ["en", "hi", "ta", "te"]:
             language = self.detect_language(text)
         
-        return {"query": text.strip(), "language": language, "source": source}
+        return {"query": text.strip(), "language": language, "source": source, "session_id": session_id}
 
 class RAGRetriever:
     # Stage 3: Retrieve context using LangChain
     @staticmethod
     def retrieve(refined_query: Dict[str, Any]) -> Dict[str, Any]:
         query, language = refined_query["query"], refined_query["language"]
+        session_id = refined_query.get("session_id", "default")
+        result = get_rag_response(query, language, session_id)
         return {
-            "response": get_rag_response(query, language),
+            "response": result["response"],
+            "sources": result.get("sources", []),
             "query": query,
             "language": language,
             "source": refined_query["source"]
@@ -88,6 +91,7 @@ class ResponseGenerator:
         return {
             "success": True,
             "response": retrieval_result["response"],
+            "sources": retrieval_result.get("sources", []),
             "language": retrieval_result["language"],
             "source": retrieval_result["source"],
             "query": retrieval_result["query"]
@@ -162,44 +166,25 @@ class PipelineOrchestrator:
         self.rag_retriever = RAGRetriever()
         self.response_generator = ResponseGenerator()
     
-    def process_text(self, text: str, language: Optional[str] = None, return_audio: bool = False) -> Dict[str, Any]:
+    def process_text(self, text: str, language: Optional[str] = None, return_audio: bool = False, session_id: str = "default") -> Dict[str, Any]:
         """Process text input through the pipeline."""
         stage1 = self.text_processor.process(text)
-        stage2 = self.query_refiner.refine(stage1, language)
+        stage2 = self.query_refiner.refine(stage1, language, session_id)
         stage3 = self.rag_retriever.retrieve(stage2)
-        final_output = self.response_generator.generate(stage3)
-        
-        # No automatic TTS generation - will be done on-demand via /tts/generate endpoint
-        
-        return final_output
+        return self.response_generator.generate(stage3)
     
     def process_audio(
-        self, 
-        audio_bytes: bytes, 
+        self,
+        audio_bytes: bytes,
         mime_type: str = "audio/wav",
         language: Optional[str] = None,
-        return_audio: bool = False
+        return_audio: bool = False,
+        session_id: str = "default"
     ) -> Dict[str, Any]:
-        """
-        Process audio input through the pipeline.
-        
-        Pipeline: Audio Input → Stage 1b → Stage 2 → Stage 3 → Stage 4
-        """
-        # Stage 1b: Audio transcription
+        """Process audio input through the pipeline."""
         stage1_output = self.audio_processor.process(audio_bytes, mime_type)
-        
-        # Stage 2: Query refinement
-        stage2_output = self.query_refiner.refine(stage1_output, language)
-        
-        # Stage 3: RAG retrieval
+        stage2_output = self.query_refiner.refine(stage1_output, language, session_id)
         stage3_output = self.rag_retriever.retrieve(stage2_output)
-        
-        # Stage 4: Response generation
         final_output = self.response_generator.generate(stage3_output)
-        
-        # Add transcription to output
         final_output["transcription"] = stage1_output["text"]
-        
-        # No automatic TTS generation - will be done on-demand via /tts/generate endpoint
-        
         return final_output
