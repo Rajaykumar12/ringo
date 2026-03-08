@@ -10,7 +10,7 @@ python-pptx
 python-dotenv
 langchain
 langchain-community
-faiss-cpu
+chromadb
 tiktoken
 openai-whisper
 sentence-transformers

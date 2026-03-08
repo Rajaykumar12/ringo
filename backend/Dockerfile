@@ -12,6 +12,9 @@ COPY . .
 # Remove local documents — they will be synced from Azure Blob Storage at runtime
 RUN rm -rf /app/documents && mkdir -p /app/documents
 
+# Ensure chroma_db directory exists for volume mount
+RUN mkdir -p /app/chroma_db
+
 EXPOSE 8000
 
 CMD ["python", "main.py"]

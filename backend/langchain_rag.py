@@ -2,7 +2,7 @@ import os
 from typing import List, Optional
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
+from langchain_community.vectorstores import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
@@ -65,6 +65,8 @@ def sync_documents_from_blob(local_folder: str = "documents"):
         print(f"⚠️ Azure Blob sync failed: {e}. Falling back to local documents/")
 
 
+CHROMA_PERSIST_DIR = "./chroma_db"
+
 class LangChainRAG:
     # LangChain-based RAG using Groq (LLM) and HuggingFace (Embeddings)
     def __init__(self, documents_folder: str = "documents"):
@@ -83,6 +85,28 @@ class LangChainRAG:
         print("✓ Groq API initialized")
         
         self.vectorstore, self.rag_chain = None, None
+        
+        # Load existing ChromaDB index if it already exists (persistence benefit)
+        self._try_load_existing_vectorstore()
+    
+    def _try_load_existing_vectorstore(self):
+        """Load an existing ChromaDB index from disk if available, skipping re-indexing."""
+        chroma_index = os.path.join(CHROMA_PERSIST_DIR, "chroma.sqlite3")
+        if os.path.exists(chroma_index):
+            try:
+                self.vectorstore = Chroma(
+                    persist_directory=CHROMA_PERSIST_DIR,
+                    embedding_function=self.embeddings
+                )
+                count = self.vectorstore._collection.count()
+                if count > 0:
+                    print(f"✓ Loaded existing ChromaDB index ({count} chunks) — skipping re-indexing")
+                else:
+                    print("ℹ️  ChromaDB index exists but is empty — will re-index on load")
+                    self.vectorstore = None
+            except Exception as e:
+                print(f"⚠️ Failed to load existing ChromaDB index: {e}. Will rebuild.")
+                self.vectorstore = None
         
     def load_documents(self) -> List[Document]:
         # Re-sync from blob storage before loading
@@ -145,9 +169,13 @@ class LangChainRAG:
                 print("⚠️ All chunks were empty after filtering")
                 return
             print(f"Created {len(chunks)} chunks (after filtering)")
-            # Indexing
-            self.vectorstore = FAISS.from_documents(chunks, self.embeddings)
-            print("✓ Vector store created successfully")
+            # Indexing — persist to disk so restarts load instantly
+            self.vectorstore = Chroma.from_documents(
+                chunks,
+                self.embeddings,
+                persist_directory=CHROMA_PERSIST_DIR
+            )
+            print(f"✓ ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
         except Exception as e:
             print(f"⚠️ Vector store creation failed: {e}")
             import traceback
