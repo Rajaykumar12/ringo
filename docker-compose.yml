@@ -1,14 +1,27 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    restart: unless-stopped
+
   backend:
     build: ./backend
     ports: 
       - "8000:8000"
     networks:
       - app-network
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
     volumes:
       - ./backend/documents:/app/documents
+      - ./backend/chroma_db:/app/chroma_db
 
   frontend:
     build: ./frontend

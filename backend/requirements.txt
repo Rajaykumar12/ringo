@@ -18,3 +18,5 @@ langdetect
 langchain-groq
 edge-tts
 azure-storage-blob
+redis
+azure-data-tables
