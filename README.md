@@ -10,11 +10,13 @@ This project delivers a robust AI chat experience with multilingual support, lev
 
 - **Groq (Llama 3.3-70b)** for blazing-fast, free text generation
 - **HuggingFace** (`all-MiniLM-L6-v2`) for local, unlimited semantic embeddings
+- **ChromaDB** for persistent, local vector storage
 - **OpenAI Whisper** for accurate, local audio transcription
 - **langdetect** for local language detection
 - **edge-tts** for high-quality TTS generation
+- **Redis** for persistent conversation memory
 
-Frontend: **Expo (React Native)**  
+Frontend: **Expo (React Native)** (Web, iOS, Android)  
 Backend: **FastAPI**
 
 ---
@@ -22,12 +24,14 @@ Backend: **FastAPI**
 ## Features
 
 - **Y-Shaped Pipeline**: Unified processing for both text and audio inputs
-- **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using FAISS vector store
-- **Multilingual**: Supports English, Hindi, Tamil, and Telugu
+- **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using ChromaDB
+- **Conversation Memory**: Remembers chat context using Redis session storage
+- **Real-time Streaming**: Token-by-token SSE (Server-Sent Events) streaming to the UI
+- **Source Attribution**: Transparently shows which PDF/PPTX documents were used to generate answers
+- **Multilingual**: Supports English, Hindi, Tamil, and Telugu natively
 - **On-Demand TTS**: High-quality voice generation using `edge-tts`
-- **Cross-Platform**: Works on iOS, Android, and Web
-- **Local & Open Source**: No vendor lock-in, unlimited usage
-- **Easy Extensibility**: Add new languages or document sources easily
+- **Smart Chunking**: Processes PDFs, Markdowns, and PowerPoint presentations (1 chunk per slide)
+- **Analytics Ready**: Automatically logs inference latency, sources, and queries to Azure Table Storage
 
 ---
 
@@ -41,70 +45,16 @@ The backend implements a modular, 4-stage Y-shaped pipeline:
 2. **Query Refinement**
     - Language detection and unified query formatting
 3. **RAG Retrieval**
-    - Semantic search using HuggingFace embeddings and FAISS
+    - Semantic search using HuggingFace embeddings and ChromaDB (with score thresholds)
 4. **Response Generation**
-    - Final answer generation using Groq API
+    - Final answer generation using Groq API via LCEL chains
 5. **Audio Output**: On-demand TTS generation with caching strategy
 
 ---
 
-## TTS Implementation
+## Quick Start (Docker)
 
-The project features a robust Text-to-Speech system designed for performance and quality:
-
-- **Engine**: Uses `edge-tts` for natural, high-quality neural voice synthesis.
-- **On-Demand Generation**: Audio is only generated when the user requests it (clicks play), saving resources.
-- **Security**: Secure file serving ensures only valid, generated audio files are accessible.
-
----
-
-## Quick Start
-
-### Backend Setup
-
-```bash
-cd backend
-# Install dependencies (Python 3.10+)
-pip install -r requirements.txt
-
-# Create .env file with your Groq API key
-echo "GROQ_API_KEY=your_groq_api_key_here" > .env
-# Get a free API key: https://console.groq.com/keys
-
-# (Optional) Add documents for RAG
-# Place PDF or PPTX files in backend/documents/
-
-# Start the FastAPI server
-python main.py
-```
-
-Server runs at: [http://localhost:8000](http://localhost:8000)
-
----
-
-### Frontend Setup
-
-```bash
-cd frontend
-# Install dependencies
-npm install
-
-# (Optional) Configure API URL for device testing
-# Edit frontend/services/api.ts:
-# export const API_BASE_URL = 'http://YOUR_LOCAL_IP:8000';
-
-# Start the Expo app
-npm start
-```
-
-Client runs at: [http://localhost:8081](http://localhost:8081)
-
-
----
-
-### Docker Setup (Recommended)
-
-Run the entire stack (Frontend + Backend) with a single command:
+Run the entire stack (Frontend + Backend + Redis) with a single command:
 
 ```bash
 # Start all services
@@ -114,12 +64,47 @@ docker compose up --build
 # Frontend App: http://localhost:8081
 ```
 
-**Note for RAG:**
-Place your PDF/PPTX documents in `backend/documents/`. They are automatically synced to the container. Restart the backend to index new files:
+---
+
+## Manual Setup
+
+### 1. Backend
 
 ```bash
-docker compose restart backend
+cd backend
+# Install dependencies (Python 3.10+)
+pip install -r requirements.txt
+
+# Create .env file with your environment variables
+cat << EOF > .env
+GROQ_API_KEY=your_groq_api_key_here
+REDIS_URL=redis://localhost:6379
+EOF
+
+# Start the FastAPI server
+python main.py
 ```
+
+### 2. Frontend
+
+```bash
+cd frontend
+# Install dependencies
+npm install
+
+# Start the Expo app
+npm start
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Required | Default |
+|---|---|---|---|
+| `GROQ_API_KEY` | API Key for Llama 3 on Groq | Yes | — |
+| `REDIS_URL` | Redis connection string for session history | No | `redis://localhost:6379` (Falls back to in-memory if invalid) |
+| `AZURE_STORAGE_CONNECTION_STRING`| Syncs documents from blob storage & logs to Table Storage | No | Uses local `documents/` folder & skips logging |
 
 ---
 
@@ -128,45 +113,41 @@ docker compose restart backend
 ```
 ADK/
 ├── backend/
-│   ├── main.py              # FastAPI server (lifespan managed)
+│   ├── main.py              # FastAPI server & streaming routes
 │   ├── pipeline.py          # Y-shaped pipeline orchestrator
-│   ├── langchain_rag.py     # RAG engine (Groq + HuggingFace)
+│   ├── rag.py               # RAG Public API & Singleton
+│   ├── vectorstore.py       # ChromaDB setup, chunking, & LCEL chain
+│   ├── memory.py            # Redis / In-memory conversation history
+│   ├── blob_sync.py         # Azure Blob Storage document synchronization
+│   ├── rag_logger.py        # Azure Table Storage analytics logging
 │   ├── requirements.txt     # Python dependencies
-│   └── documents/           # Knowledge base files (PDF/PPTX)
+│   └── documents/           # Knowledge base files (PDF/PPTX/MD)
 │
-└── frontend/
-    ├── app/
-    │   ├── _layout.tsx      # Root layout
-    │   └── index.tsx        # Main chat interface
-    ├── components/
-    │   ├── chat-input.tsx   # Input & recording logic
-    │   ├── chat-messages.tsx # Message list display
-    │   └── language-selector.tsx # Language picker
-    ├── services/
-    │   └── api.ts           # API client
-    ├── hooks/               # Custom React hooks
-    ├── constants/           # App constants
-    └── assets/              # Static assets
+├── frontend/
+│   ├── app/
+│   │   └── index.tsx        # Main chat interface with Streaming
+│   ├── components/
+│   │   ├── chat-messages.tsx # Message list display & source tags
+│   │   └── ...
+│   └── services/
+│       └── api.ts           # Axios client configured for SSE and Long-polling
+└── docker-compose.yml       # Orchestrates App, Backend, and Redis
 ```
 
 ---
 
 ## Deployment
 
-This project is deployed on **Azure Container Apps** using:
-- **Azure Blob Storage** for dynamic document management (RAG knowledge base)
+This project is optimized for **Azure Container Apps**:
+- **Azure Blob Storage** for dynamic document management (`documents` container)
+- **Azure Table Storage** for RAG analytics (`raglogs` table)
+- **Azure Cache for Redis** for persistent, scalable session memory
 - **Azure Container Registry** for secure image hosting
 
-The backend and frontend are containerized and run as separate services within the same Azure Container Apps environment, ensuring scalability and reliability. Documents for retrieval-augmented generation are managed through Azure Blob Storage, allowing updates without redeploying the application.
+The backend, frontend, and database layers scale independently, ensuring reliability under load.
 
 ---
 
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
-
----
-
-## Contributing
-
-Pull requests and issues are welcome! For major changes, please open an issue first to discuss what you would like to change.
