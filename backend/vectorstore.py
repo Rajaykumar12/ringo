@@ -42,7 +42,7 @@ class LangChainRAG:
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile", api_key=self.groq_api_key, temperature=0.7
         )
-        print("✓ Groq API initialized")
+        print("Groq API initialized")
 
         self.vectorstore = None
         self.rag_chain_with_history = None
@@ -61,13 +61,13 @@ class LangChainRAG:
                 )
                 count = self.vectorstore._collection.count()
                 if count > 0:
-                    print(f"✓ Loaded existing ChromaDB index ({count} chunks) — skipping re-indexing")
+                    print(f"Loaded existing ChromaDB index ({count} chunks) - skipping re-indexing")
                     self._build_rag_chain()
                 else:
-                    print("ℹ️  ChromaDB index exists but is empty — will re-index on load")
+                    print("ChromaDB index exists but is empty - will re-index on load")
                     self.vectorstore = None
             except Exception as e:
-                print(f"⚠️ Failed to load existing ChromaDB index: {e}. Will rebuild.")
+                print(f"Failed to load existing ChromaDB index: {e}. Will rebuild.")
                 self.vectorstore = None
 
     def _build_rag_chain(self):
@@ -97,7 +97,7 @@ Context:
             input_messages_key="question",
             history_messages_key="history",
         )
-        print("✓ RAG chain with conversation history built")
+        print("RAG chain with conversation history built")
 
     def load_documents(self) -> List[Document]:
         """Load documents from the folder. One Document per PPTX slide, full text for PDF/MD."""
@@ -114,7 +114,7 @@ Context:
             ext = os.path.splitext(filename)[1].lower()
 
             if ext not in self.SUPPORTED_EXTENSIONS:
-                print(f"⚠️ Skipping unsupported file type: {filename} (supported: pdf, pptx, md)")
+                print(f"Skipping unsupported file type: {filename} (supported: pdf, pptx, md)")
                 continue
 
             try:
@@ -131,7 +131,7 @@ Context:
                         ))
                         print(f"Loaded: {filename} ({len(text)} chars)")
                     else:
-                        print(f"⚠️ Skipping {filename}: no extractable text")
+                        print(f"Skipping {filename}: no extractable text")
 
                 elif filename.endswith(".pptx"):
                     # One Document per slide for better retrieval granularity
@@ -160,7 +160,7 @@ Context:
                         ))
                         print(f"Loaded: {filename} ({len(text)} chars)")
                     else:
-                        print(f"⚠️ Skipping {filename}: empty file")
+                        print(f"Skipping {filename}: empty file")
 
             except Exception as e:
                 print(f"Error loading {filename}: {e}")
@@ -170,7 +170,7 @@ Context:
     def create_vectorstore(self, documents: List[Document]):
         """Index documents into ChromaDB using per-type chunk sizes."""
         if not documents:
-            print("⚠️ No documents to index")
+            print("No documents to index")
             return
 
         try:
@@ -194,7 +194,7 @@ Context:
             all_chunks = [c for c in all_chunks if c.page_content and c.page_content.strip()]
 
             if not all_chunks:
-                print("⚠️ All chunks were empty after filtering")
+                print("All chunks were empty after filtering")
                 return
 
             print(f"Created {len(all_chunks)} chunks across {len(documents)} document(s)")
@@ -204,11 +204,11 @@ Context:
                 self.embeddings,
                 persist_directory=CHROMA_PERSIST_DIR,
             )
-            print(f"✓ ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
+            print(f"ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
             self._build_rag_chain()
 
         except Exception as e:
-            print(f"⚠️ Vector store creation failed: {e}")
+            print(f"Vector store creation failed: {e}")
             import traceback
             traceback.print_exc()
             self.vectorstore = None

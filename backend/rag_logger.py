@@ -35,4 +35,4 @@ def log_rag_call(query: str, response: str, sources: list, language: str, latenc
         }
         table.upsert_entity(entity)
     except Exception as e:
-        print(f"⚠️ Table Storage logging failed: {e}")
+        print(f"Table Storage logging failed: {e}")

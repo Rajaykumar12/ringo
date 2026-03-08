@@ -20,9 +20,9 @@ def refresh_documents():
     """Refresh documents from blob storage and rebuild the vector store."""
     global rag_system
     if rag_system:
-        print("🔄 Refreshing documents from blob storage...")
+        print("Refreshing documents from blob storage...")
         rag_system.create_vectorstore(rag_system.load_documents())
-        print("✓ Documents refreshed successfully")
+        print("Documents refreshed successfully")
 
 
 def get_rag_response(query: str, language: str = "en", session_id: str = "default") -> Dict[str, Any]:

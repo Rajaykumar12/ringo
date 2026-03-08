@@ -79,7 +79,7 @@ export function ChatMessages({
             {message.sender === 'ai' && message.sources && message.sources.length > 0 && (
               <View style={styles.sourcesContainer}>
                 {message.sources.map((src, i) => (
-                  <Text key={i} style={styles.sourceTag}>📄 {src}</Text>
+                  <Text key={i} style={styles.sourceTag}> {src}</Text>
                 ))}
               </View>
             )}
