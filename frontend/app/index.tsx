@@ -22,6 +22,8 @@ export default function ChatScreen() {
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
   const [useStreaming, setUseStreaming] = useState(false);
+  // Session ID — generated once per app session for conversation memory
+  const [sessionId] = useState(() => `session_${Date.now()}`);
 
   // Audio playback state
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
@@ -177,16 +179,18 @@ export default function ChatScreen() {
         // Non-streaming mode
         const response = await sendTextMessage(
           text,
-          selectedLanguage === 'auto' ? undefined : selectedLanguage
+          selectedLanguage === 'auto' ? undefined : selectedLanguage,
+          false,
+          sessionId
         );
 
-        // Add AI response (no audio data - will be generated on-demand)
         const aiMessage: Message = {
           id: (Date.now() + 1).toString(),
           text: response.response,
           sender: 'ai',
           timestamp: new Date(),
           language: response.language,
+          sources: response.sources,
         };
         setMessages((prev) => [...prev, aiMessage]);
       }
@@ -257,7 +261,9 @@ export default function ChatScreen() {
 
       const response = await sendAudioMessage(
         uri,
-        selectedLanguage === 'auto' ? undefined : selectedLanguage
+        selectedLanguage === 'auto' ? undefined : selectedLanguage,
+        false,
+        sessionId
       );
 
       if (response.transcription) {

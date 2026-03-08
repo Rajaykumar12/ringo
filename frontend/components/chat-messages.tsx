@@ -74,6 +74,15 @@ export function ChatMessages({
             >
               {message.text}
             </Text>
+
+            {/* [Low #11] Source attribution — show which docs the answer came from */}
+            {message.sender === 'ai' && message.sources && message.sources.length > 0 && (
+              <View style={styles.sourcesContainer}>
+                {message.sources.map((src, i) => (
+                  <Text key={i} style={styles.sourceTag}>📄 {src}</Text>
+                ))}
+              </View>
+            )}
             {message.isAudio && (
               <Text style={styles.audioLabel}>Voice Message</Text>
             )}
@@ -172,5 +181,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 8,
+  },
+  sourcesContainer: {
+    marginTop: 6,
+    gap: 2,
+  },
+  sourceTag: {
+    fontSize: 11,
+    color: '#555555',
+    opacity: 0.8,
+    fontStyle: 'italic',
   },
 });

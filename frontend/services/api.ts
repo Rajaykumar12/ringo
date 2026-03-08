@@ -8,7 +8,7 @@ const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindi
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000,
+  timeout: 60000, // [High #7] Increased from 30s to 60s for RAG + cold-start
 });
 
 export interface Message {
@@ -20,12 +20,14 @@ export interface Message {
   audio_data?: string;
   audio_available?: boolean;
   language?: string;
+  sources?: string[];
 }
 
 export interface ChatResponse {
   success: boolean;
   response: string;
   language: string;
+  sources?: string[];
   user_transcription?: string;
 }
 
@@ -38,7 +40,8 @@ export interface AudioChatResponse {
 export const sendTextMessage = async (
   message: string,
   language?: string,
-  stream: boolean = false
+  stream: boolean = false,
+  session_id: string = 'default'
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('message', message);
@@ -46,6 +49,7 @@ export const sendTextMessage = async (
     formData.append('language', language);
   }
   formData.append('stream', stream.toString());
+  formData.append('session_id', session_id);
 
   const response = await api.post<ChatResponse>('/chat/text', formData);
   return response.data;
@@ -100,7 +104,8 @@ export const sendTextMessageStream = async (
 export const sendAudioMessage = async (
   audioUri: string,
   language?: string,
-  stream: boolean = false
+  stream: boolean = false,
+  session_id: string = 'default'
 ): Promise<AudioChatResponse> => {
   const formData = new FormData();
 
@@ -123,17 +128,14 @@ export const sendAudioMessage = async (
     formData.append('language', language);
   }
   formData.append('stream', stream.toString());
+  formData.append('session_id', session_id);
 
   const response = await api.post('/chat/audio', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
+    headers: { 'Content-Type': 'multipart/form-data' },
     responseType: 'json',
   });
 
-  // Backend returns JSON with text response and transcription (no audio)
   const data = response.data;
-
   return {
     transcription: data.transcription || '',
     responseText: data.response || '',
