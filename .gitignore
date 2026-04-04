@@ -16,8 +16,13 @@ ENV/
 
 # ChromaDB
 chroma/
+chroma_db/
+backend/chroma_db/
 *.db
 *.sqlite
+
+# Claude Code
+CLAUDE.md
 
 backend/documents/*
 !backend/documents/instruction.md
