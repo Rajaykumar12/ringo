@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import {
   View,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Platform,
+  Pressable,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { Colors, Radii, Shadows } from '@/constants/theme';
 
 interface ChatInputProps {
   onSendText: (message: string) => void;
@@ -16,13 +18,39 @@ interface ChatInputProps {
   isLoading: boolean;
 }
 
-export function ChatInput({
-  onSendText,
-  onSendAudio,
-  isRecording,
-  isLoading,
-}: ChatInputProps) {
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function ActionButton({
+  onPress,
+  color,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  color: string;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <AnimatedPressable
+      onPressIn={() => { scale.value = withSpring(0.92, { damping: 15 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 15 }); }}
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.actionButton, { backgroundColor: color }, animStyle, Shadows.float]}
+      accessibilityRole="button"
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
+export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: ChatInputProps) {
   const [message, setMessage] = useState('');
+  const [focused, setFocused] = useState(false);
 
   const handleSend = () => {
     if (message.trim() && !isLoading) {
@@ -31,43 +59,38 @@ export function ChatInput({
     }
   };
 
+  const buttonColor = isRecording ? Colors.error : message.trim() ? Colors.amber : Colors.teal;
+  const buttonIcon = isRecording ? 'stop-circle' : message.trim() ? 'send' : 'mic';
+  const buttonSize = isRecording || !message.trim() ? 24 : 20;
+
   return (
     <View style={styles.container}>
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputWrapper, focused && styles.inputWrapperFocused]}>
         <TextInput
           style={styles.input}
-          placeholder="Type your message..."
-          placeholderTextColor="#999"
+          placeholder="Ask anything…"
+          placeholderTextColor={Colors.textFaint}
           value={message}
           onChangeText={setMessage}
           multiline
           maxLength={1000}
           editable={!isLoading}
           onSubmitEditing={handleSend}
-          // @ts-ignore - Remove focus outline on web
-          {...(Platform.OS === 'web' && { style: { outline: 'none' } })}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          // @ts-ignore
+          {...(Platform.OS === 'web' && { style: [styles.input, { outline: 'none' }] })}
         />
       </View>
 
       {isLoading ? (
-        <View style={styles.loadingButton}>
-          <ActivityIndicator color="#007AFF" />
+        <View style={[styles.actionButton, styles.loadingButton]}>
+          <ActivityIndicator color={Colors.textMuted} size="small" />
         </View>
-      ) : message.trim() ? (
-        <TouchableOpacity style={styles.sendButton} onPress={handleSend}>
-          <Ionicons name="send" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
       ) : (
-        <TouchableOpacity
-          style={[styles.voiceButton, isRecording && styles.recording]}
-          onPress={onSendAudio}
-        >
-          <Ionicons
-            name={isRecording ? 'stop-circle' : 'mic'}
-            size={28}
-            color="#FFFFFF"
-          />
-        </TouchableOpacity>
+        <ActionButton onPress={message.trim() ? handleSend : onSendAudio} color={buttonColor}>
+          <Ionicons name={buttonIcon as any} size={buttonSize} color="#FFFFFF" />
+        </ActionButton>
       )}
     </View>
   );
@@ -76,51 +99,41 @@ export function ChatInput({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    padding: 12,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 26 : 12,
+    backgroundColor: Colors.surface,
     alignItems: 'flex-end',
+    gap: 10,
+    ...Shadows.float,
   },
-  inputContainer: {
+  inputWrapper: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 24,
+    backgroundColor: Colors.surfaceWarm,
+    borderRadius: Radii.xl,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    marginRight: 8,
-    maxHeight: 100,
+    paddingVertical: 10,
+    maxHeight: 110,
+  },
+  inputWrapperFocused: {
+    borderColor: Colors.amber,
   },
   input: {
-    fontSize: 16,
-    minHeight: 40,
+    fontSize: 15,
+    color: Colors.text,
+    minHeight: 22,
+    lineHeight: 22,
   },
-  sendButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#007AFF',
+  actionButton: {
+    width: 46,
+    height: 46,
+    borderRadius: Radii.full,
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  voiceButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#34C759',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  recording: {
-    backgroundColor: '#FF3B30',
   },
   loadingButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: Colors.surfaceWarm,
   },
 });
