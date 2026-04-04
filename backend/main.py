@@ -46,8 +46,13 @@ async def lifespan(app: FastAPI):
 if not os.environ.get("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY missing!")
 
-# Initialize rate limiter
-limiter = Limiter(key_func=get_remote_address)
+# Initialize rate limiter — skip OPTIONS (CORS preflight) requests
+def _rate_limit_key(request: Request) -> str:
+    if request.method == "OPTIONS":
+        return None  # type: ignore[return-value]  # None exempts the request
+    return get_remote_address(request)
+
+limiter = Limiter(key_func=_rate_limit_key)
 
 app = FastAPI(title="Multilingual AI Chat API", version="2.0.0", lifespan=lifespan)
 app.state.limiter = limiter
@@ -60,13 +65,20 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = json.loads(json.dumps(exc.errors(), default=str))
     return JSONResponse(status_code=422, content={"detail": errors})
 
-# CORS configuration - configurable via environment variable
-ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006").split(",")
-print(f"CORS allowed origins: {ALLOWED_ORIGINS}")
+# CORS configuration — set ALLOWED_ORIGINS env var as comma-separated list.
+# Also allows all *.azurecontainerapps.io origins automatically.
+_ALLOWED_ORIGINS_ENV = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006"
+).split(",")
+
+ALLOWED_ORIGINS = _ALLOWED_ORIGINS_ENV
+print(f"CORS static origins: {ALLOWED_ORIGINS}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://[\w-]+\.azurecontainerapps\.io",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
