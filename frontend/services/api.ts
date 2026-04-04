@@ -143,6 +143,64 @@ export const sendAudioMessage = async (
   };
 };
 
+export interface DocumentInfo {
+  filename: string;
+  chunks: number;
+  type: string;
+}
+
+export const listDocuments = async (): Promise<DocumentInfo[]> => {
+  const response = await api.get('/documents/list');
+  return response.data.documents;
+};
+
+export const uploadDocument = async (
+  uri: string,
+  filename: string,
+  mimeType: string,
+  onProgress?: (pct: number) => void
+): Promise<{ success: boolean; filename: string; message: string }> => {
+  const formData = new FormData();
+
+  if (typeof window !== 'undefined' && (uri.startsWith('blob:') || uri.startsWith('data:'))) {
+    // Web: expo-document-picker returns a blob/data URL — fetch it first
+    const res = await fetch(uri);
+    const blob = await res.blob();
+    formData.append('file', blob, filename);
+  } else {
+    // React Native mobile: pass the file object directly
+    // @ts-ignore — React Native FormData supports file objects
+    formData.append('file', { uri, name: filename, type: mimeType } as any);
+  }
+
+  const response = await api.post('/documents/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (e) => {
+      if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
+    },
+  });
+  return response.data;
+};
+
+export const deleteDocument = async (filename: string): Promise<void> => {
+  await api.delete(`/documents/${encodeURIComponent(filename)}`);
+};
+
+export interface DocumentChunk {
+  text: string;
+  metadata: { source: string; type?: string; slide?: number; page?: number };
+}
+
+export const getDocumentChunks = async (
+  source: string,
+  query: string = ''
+): Promise<{ source: string; chunks: DocumentChunk[] }> => {
+  const params = new URLSearchParams({ source });
+  if (query) params.append('query', query);
+  const response = await api.get(`/documents/chunks?${params.toString()}`);
+  return response.data;
+};
+
 // Generate TTS audio on-demand
 export const generateTTS = async (
   text: string,
