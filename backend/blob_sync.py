@@ -53,3 +53,46 @@ def sync_documents_from_blob(local_folder: str = "documents"):
         print("Azure Blob Storage sync complete")
     except Exception as e:
         print(f"Azure Blob sync failed: {e}. Falling back to local documents/")
+
+
+def upload_document(filename: str, data: bytes, local_folder: str = "documents") -> None:
+    """Upload a document to Azure Blob Storage (or local folder if Azure not configured)."""
+    connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    container_name = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "documents")
+
+    if connection_string:
+        try:
+            from azure.storage.blob import BlobServiceClient
+            client = BlobServiceClient.from_connection_string(connection_string)
+            blob_client = client.get_blob_client(container=container_name, blob=filename)
+            blob_client.upload_blob(data, overwrite=True)
+            print(f"Uploaded '{filename}' to Azure Blob Storage '{container_name}'")
+            return
+        except Exception as e:
+            print(f"Azure upload failed: {e}. Saving locally instead.")
+
+    # Local fallback
+    os.makedirs(local_folder, exist_ok=True)
+    with open(os.path.join(local_folder, filename), "wb") as f:
+        f.write(data)
+    print(f"Saved '{filename}' to local {local_folder}/")
+
+
+def delete_document(filename: str, local_folder: str = "documents") -> None:
+    """Delete a document from Azure Blob Storage and local folder."""
+    connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
+    container_name = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "documents")
+
+    if connection_string:
+        try:
+            from azure.storage.blob import BlobServiceClient
+            client = BlobServiceClient.from_connection_string(connection_string)
+            client.get_blob_client(container=container_name, blob=filename).delete_blob()
+            print(f"Deleted '{filename}' from Azure Blob Storage")
+        except Exception as e:
+            print(f"Azure delete failed: {e}")
+
+    local_path = os.path.join(local_folder, filename)
+    if os.path.exists(local_path):
+        os.remove(local_path)
+        print(f"Deleted '{filename}' from local {local_folder}/")
