@@ -8,6 +8,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
 from typing import Optional
 from dotenv import load_dotenv
+from slowapi import SlowApi, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, QueryRefiner
 from rag import initialize_rag, refresh_documents, get_rag_response, rag_system as _rag_ref
 from rag_logger import log_rag_call
@@ -39,17 +42,27 @@ async def lifespan(app: FastAPI):
 if not os.environ.get("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY missing!")
 
+# Initialize rate limiter
+from slowapi.limiter import Limiter
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Multilingual AI Chat API", version="2.0.0", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print(f"Validation error: {exc.errors()}")
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
+# CORS configuration - configurable via environment variable
+ALLOWED_ORIGINS = os.environ.get("ALLOWED_ORIGINS", "http://localhost:8081,http://localhost:8080,http://127.0.0.1:8081").split(",")
+print(f"CORS allowed origins: {ALLOWED_ORIGINS}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -99,7 +112,9 @@ async def health():
 
 
 @app.post("/chat/text")
+@limiter.limit("10/minute")
 async def text_chat(
+    request: Request,
     message: str = Form(...),
     language: Optional[str] = Form(None),
     stream: bool = Form(False),
@@ -160,7 +175,9 @@ async def text_chat(
 
 
 @app.post("/chat/audio")
+@limiter.limit("10/minute")
 async def audio_chat(
+    request: Request,
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
     stream: bool = Form(False),
