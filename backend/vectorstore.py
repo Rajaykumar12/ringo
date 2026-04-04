@@ -1,8 +1,12 @@
 """
-vectorstore.py — LangChainRAG: ChromaDB vector store + LLM chain.
-Handles document loading, per-type chunking, indexing, and RAG chain construction.
+vectorstore.py — LangChainRAG: ChromaDB vector store + hybrid retriever + LLM chain.
+Handles document loading (PDF per-page via PyMuPDF, PPTX per-slide),
+OCR on embedded images, LaTeX normalization, and BM25 + semantic hybrid retrieval.
 """
-from typing import List
+import io
+import os
+from typing import List, Optional
+
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
@@ -10,15 +14,44 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from pypdf import PdfReader
-from pptx import Presentation
+from langchain_community.retrievers import BM25Retriever
+from langchain_classic.retrievers import EnsembleRetriever
 
 from blob_sync import sync_documents_from_blob
 from memory import get_session_history
-
-import os
+from latex_utils import normalize_math
 
 CHROMA_PERSIST_DIR = "./chroma_db"
+
+# Warn once if tesseract is missing rather than crashing
+_OCR_AVAILABLE: Optional[bool] = None
+
+
+def _ocr_image(img_bytes: bytes) -> str:
+    """Run Tesseract OCR on raw image bytes. Returns '' if tesseract not installed."""
+    global _OCR_AVAILABLE
+    if _OCR_AVAILABLE is False:
+        return ""
+    try:
+        import pytesseract
+        from PIL import Image
+        if _OCR_AVAILABLE is None:
+            _OCR_AVAILABLE = True
+        img = Image.open(io.BytesIO(img_bytes))
+        text = pytesseract.image_to_string(img, config="--psm 6").strip()
+        return text if len(text) >= 15 else ""
+    except ImportError:
+        if _OCR_AVAILABLE is None:
+            print("⚠️  pytesseract / Pillow not installed — image OCR disabled")
+            _OCR_AVAILABLE = False
+        return ""
+    except Exception as e:
+        if "tesseract is not installed" in str(e).lower() or "tesseract" in str(e).lower():
+            if _OCR_AVAILABLE is None:
+                print("⚠️  Tesseract binary not found — image OCR disabled. Install with: sudo dnf install tesseract")
+                _OCR_AVAILABLE = False
+            return ""
+        return ""
 
 
 class LangChainRAG:
@@ -45,33 +78,48 @@ class LangChainRAG:
         print("Groq API initialized")
 
         self.vectorstore = None
+        self.bm25_retriever: Optional[BM25Retriever] = None
         self.rag_chain_with_history = None
 
-        # Load existing ChromaDB index if available
         self._try_load_existing_vectorstore()
 
     def _try_load_existing_vectorstore(self):
-        """Load an existing ChromaDB index from disk if available, skipping re-indexing."""
+        """Load existing ChromaDB index; rebuild BM25 from stored chunks."""
         chroma_index = os.path.join(CHROMA_PERSIST_DIR, "chroma.sqlite3")
-        if os.path.exists(chroma_index):
-            try:
-                self.vectorstore = Chroma(
-                    persist_directory=CHROMA_PERSIST_DIR,
-                    embedding_function=self.embeddings,
-                )
-                count = self.vectorstore._collection.count()
-                if count > 0:
-                    print(f"Loaded existing ChromaDB index ({count} chunks) - skipping re-indexing")
-                    self._build_rag_chain()
-                else:
-                    print("ChromaDB index exists but is empty - will re-index on load")
-                    self.vectorstore = None
-            except Exception as e:
-                print(f"Failed to load existing ChromaDB index: {e}. Will rebuild.")
+        if not os.path.exists(chroma_index):
+            return
+
+        try:
+            self.vectorstore = Chroma(
+                persist_directory=CHROMA_PERSIST_DIR,
+                embedding_function=self.embeddings,
+            )
+            count = self.vectorstore._collection.count()
+            if count == 0:
+                print("ChromaDB index exists but is empty — will re-index on load")
                 self.vectorstore = None
+                return
+
+            print(f"Loaded existing ChromaDB index ({count} chunks) - skipping re-indexing")
+
+            # Rebuild BM25 from stored Chroma documents (no disk read needed)
+            result = self.vectorstore._collection.get(include=["documents", "metadatas"])
+            docs = [
+                Document(page_content=t, metadata=m)
+                for t, m in zip(result["documents"], result["metadatas"])
+                if t and t.strip()
+            ]
+            self.bm25_retriever = BM25Retriever.from_documents(docs, k=5)
+            print(f"BM25 index built ({len(docs)} chunks)")
+
+            self._build_rag_chain()
+        except Exception as e:
+            print(f"Failed to load existing ChromaDB index: {e}. Will rebuild.")
+            self.vectorstore = None
+            self.bm25_retriever = None
 
     def _build_rag_chain(self):
-        """Build the LCEL chain with conversation history (RunnableWithMessageHistory)."""
+        """Build the LCEL chain with conversation history."""
         if not self.vectorstore:
             return
 
@@ -99,10 +147,108 @@ Context:
         )
         print("RAG chain with conversation history built")
 
-    def load_documents(self) -> List[Document]:
-        """Load documents from the folder. One Document per PPTX slide, full text for PDF/MD."""
-        sync_documents_from_blob(self.documents_folder)
+    def _load_pdf(self, filepath: str, filename: str) -> List[Document]:
+        """Load PDF per-page using PyMuPDF with OCR on embedded images."""
+        try:
+            import fitz  # PyMuPDF
+        except ImportError:
+            print("⚠️  pymupdf not installed — skipping PDF loading")
+            return []
+
         documents = []
+        try:
+            doc = fitz.open(filepath)
+            for page_num, page in enumerate(doc):
+                text = page.get_text()
+
+                # OCR any images on this page
+                ocr_parts = []
+                for img in page.get_images(full=True):
+                    xref = img[0]
+                    try:
+                        base_image = doc.extract_image(xref)
+                        ocr_text = _ocr_image(base_image["image"])
+                        if ocr_text:
+                            ocr_parts.append(f"[Image text: {ocr_text}]")
+                    except Exception:
+                        pass
+
+                full_text = normalize_math(text)
+                if ocr_parts:
+                    full_text += "\n" + "\n".join(ocr_parts)
+
+                if full_text.strip():
+                    documents.append(Document(
+                        page_content=full_text.strip(),
+                        metadata={"source": filename, "type": "pdf", "page": page_num + 1},
+                    ))
+
+            page_count = len(documents)
+            print(f"Loaded: {filename} ({page_count} pages)")
+        except Exception as e:
+            print(f"Error loading PDF {filename}: {e}")
+
+        return documents
+
+    def _load_pptx(self, filepath: str, filename: str) -> List[Document]:
+        """Load PPTX per-slide with OCR on picture shapes."""
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+
+        documents = []
+        try:
+            prs = Presentation(filepath)
+            slide_count = 0
+            for i, slide in enumerate(prs.slides):
+                slide_text = "\n".join(
+                    shape.text for shape in slide.shapes
+                    if hasattr(shape, "text") and shape.text.strip()
+                )
+
+                # OCR picture shapes on this slide
+                for shape in slide.shapes:
+                    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                        try:
+                            ocr_text = _ocr_image(shape.image.blob)
+                            if ocr_text:
+                                slide_text += f"\n[Image text: {ocr_text}]"
+                        except Exception:
+                            pass
+
+                slide_text = normalize_math(slide_text)
+                if slide_text.strip():
+                    documents.append(Document(
+                        page_content=slide_text.strip(),
+                        metadata={"source": filename, "type": "pptx", "slide": i + 1},
+                    ))
+                    slide_count += 1
+
+            print(f"Loaded: {filename} ({slide_count} slides)")
+        except Exception as e:
+            print(f"Error loading PPTX {filename}: {e}")
+
+        return documents
+
+    def _load_markdown(self, filepath: str, filename: str) -> List[Document]:
+        """Load markdown file as a single document with math normalization."""
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                text = f.read()
+            if text.strip():
+                print(f"Loaded: {filename} ({len(text)} chars)")
+                return [Document(
+                    page_content=normalize_math(text.strip()),
+                    metadata={"source": filename, "type": "markdown"},
+                )]
+            print(f"Skipping {filename}: empty file")
+        except Exception as e:
+            print(f"Error loading {filename}: {e}")
+        return []
+
+    def load_documents(self) -> List[Document]:
+        """Load all documents from the folder."""
+        sync_documents_from_blob(self.documents_folder)
+        documents: List[Document] = []
 
         if not os.path.exists(self.documents_folder):
             os.makedirs(self.documents_folder)
@@ -114,82 +260,45 @@ Context:
             ext = os.path.splitext(filename)[1].lower()
 
             if ext not in self.SUPPORTED_EXTENSIONS:
-                print(f"Skipping unsupported file type: {filename} (supported: pdf, pptx, md)")
+                print(f"Skipping unsupported file type: {filename}")
                 continue
 
-            try:
-                if filename.endswith(".pdf"):
-                    text = ""
-                    for page in PdfReader(filepath).pages:
-                        page_text = page.extract_text()
-                        if page_text:
-                            text += page_text + "\n"
-                    if text.strip():
-                        documents.append(Document(
-                            page_content=text.strip(),
-                            metadata={"source": filename, "type": "pdf"}
-                        ))
-                        print(f"Loaded: {filename} ({len(text)} chars)")
-                    else:
-                        print(f"Skipping {filename}: no extractable text")
-
-                elif filename.endswith(".pptx"):
-                    # One Document per slide for better retrieval granularity
-                    prs = Presentation(filepath)
-                    slide_count = 0
-                    for i, slide in enumerate(prs.slides):
-                        slide_text = "\n".join(
-                            shape.text for shape in slide.shapes
-                            if hasattr(shape, "text") and shape.text.strip()
-                        )
-                        if slide_text.strip():
-                            documents.append(Document(
-                                page_content=slide_text.strip(),
-                                metadata={"source": filename, "type": "pptx", "slide": i + 1}
-                            ))
-                            slide_count += 1
-                    print(f"Loaded: {filename} ({slide_count} slides as separate chunks)")
-
-                elif filename.endswith(".md"):
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        text = f.read()
-                    if text.strip():
-                        documents.append(Document(
-                            page_content=text.strip(),
-                            metadata={"source": filename, "type": "markdown"}
-                        ))
-                        print(f"Loaded: {filename} ({len(text)} chars)")
-                    else:
-                        print(f"Skipping {filename}: empty file")
-
-            except Exception as e:
-                print(f"Error loading {filename}: {e}")
+            if ext == ".pdf":
+                documents.extend(self._load_pdf(filepath, filename))
+            elif ext == ".pptx":
+                documents.extend(self._load_pptx(filepath, filename))
+            elif ext == ".md":
+                documents.extend(self._load_markdown(filepath, filename))
 
         return documents
 
     def create_vectorstore(self, documents: List[Document]):
-        """Index documents into ChromaDB using per-type chunk sizes."""
+        """Index documents into ChromaDB and build BM25 retriever."""
         if not documents:
             print("No documents to index")
             return
 
         try:
-            # Per-document-type chunking strategies
+            # Per-type chunking — PPTX and per-page PDFs are already small,
+            # so only split markdown and very long PDF pages further
             pdf_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
             md_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
-            generic_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
 
-            all_chunks = []
+            all_chunks: List[Document] = []
             for doc in documents:
                 doc_type = doc.metadata.get("type", "")
                 if doc_type == "pptx":
                     all_chunks.append(doc)  # Already 1 doc per slide
                 elif doc_type == "pdf":
-                    all_chunks.extend(pdf_splitter.split_documents([doc]))
+                    # Split long pages; short pages kept as-is
+                    if len(doc.page_content) > 900:
+                        all_chunks.extend(pdf_splitter.split_documents([doc]))
+                    else:
+                        all_chunks.append(doc)
                 elif doc_type == "markdown":
                     all_chunks.extend(md_splitter.split_documents([doc]))
                 else:
-                    all_chunks.extend(generic_splitter.split_documents([doc]))
+                    all_chunks.append(doc)
 
             all_chunks = [c for c in all_chunks if c.page_content and c.page_content.strip()]
 
@@ -197,7 +306,7 @@ Context:
                 print("All chunks were empty after filtering")
                 return
 
-            print(f"Created {len(all_chunks)} chunks across {len(documents)} document(s)")
+            print(f"Created {len(all_chunks)} chunks across {len(documents)} source pages/slides")
 
             self.vectorstore = Chroma.from_documents(
                 all_chunks,
@@ -205,6 +314,11 @@ Context:
                 persist_directory=CHROMA_PERSIST_DIR,
             )
             print(f"ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
+
+            # Build BM25 from the same chunks
+            self.bm25_retriever = BM25Retriever.from_documents(all_chunks, k=5)
+            print(f"BM25 index built ({len(all_chunks)} chunks)")
+
             self._build_rag_chain()
 
         except Exception as e:
@@ -212,15 +326,19 @@ Context:
             import traceback
             traceback.print_exc()
             self.vectorstore = None
+            self.bm25_retriever = None
 
     def get_retriever(self):
-        """Score-threshold retriever — only returns relevant chunks (threshold: 0.3)."""
+        """Hybrid retriever: BM25 (0.4) + semantic Chroma (0.6).
+        Falls back to semantic-only if BM25 not available."""
         if not self.vectorstore:
             return None
-        try:
-            return self.vectorstore.as_retriever(
-                search_type="similarity_score_threshold",
-                search_kwargs={"k": 5, "score_threshold": 0.3},
+
+        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 5})
+
+        if self.bm25_retriever:
+            return EnsembleRetriever(
+                retrievers=[self.bm25_retriever, semantic],
+                weights=[0.4, 0.6],
             )
-        except Exception:
-            return self.vectorstore.as_retriever(search_kwargs={"k": 5})
+        return semantic
