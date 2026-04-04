@@ -1,6 +1,6 @@
 # Multilingual AI Chat System
 
-> A fully open-source, cross-platform AI chat application supporting both text and voice, built with modern, high-performance open-source technologies.
+> A fully open-source, cross-platform AI chat application supporting text and voice, built with modern high-performance technologies and a warm, polished mobile UI.
 
 ---
 
@@ -8,103 +8,112 @@
 
 This project delivers a robust AI chat experience with multilingual support, leveraging:
 
-- **Groq (Llama 3.3-70b)** for blazing-fast, free text generation
-- **HuggingFace** (`all-MiniLM-L6-v2`) for local, unlimited semantic embeddings
-- **ChromaDB** for persistent, local vector storage
-- **OpenAI Whisper** for accurate, local audio transcription
-- **langdetect** for local language detection
+- **Groq (Llama 3.3-70b)** for fast text generation
+- **HuggingFace** (`all-MiniLM-L6-v2`) for local semantic embeddings
+- **ChromaDB** for persistent vector storage
+- **PyMuPDF** for high-fidelity PDF parsing with per-page chunking
+- **Tesseract OCR** for extracting text from embedded images in documents
+- **BM25 + Semantic hybrid search** via `EnsembleRetriever`
+- **OpenAI Whisper** for local audio transcription
+- **langdetect** for language detection
 - **edge-tts** for high-quality TTS generation
 - **Redis** for persistent conversation memory
 
-Frontend: **Expo (React Native)** (Web, iOS, Android)  
+Frontend: **Expo (React Native)** — Web, iOS, Android  
 Backend: **FastAPI**
 
 ---
 
 ## Features
 
-- **Y-Shaped Pipeline**: Unified processing for both text and audio inputs
-- **Retrieval Augmented Generation (RAG)**: Professional-grade RAG using ChromaDB
-- **Conversation Memory**: Remembers chat context using Redis session storage
-- **Real-time Streaming**: Token-by-token SSE (Server-Sent Events) streaming to the UI
-- **Source Attribution**: Transparently shows which PDF/PPTX documents were used to generate answers
-- **Multilingual**: Supports English, Hindi, Tamil, and Telugu natively
-- **On-Demand TTS**: High-quality voice generation using `edge-tts`
-- **Smart Chunking**: Processes PDFs, Markdowns, and PowerPoint presentations (1 chunk per slide)
-- **Analytics Ready**: Automatically logs inference latency, sources, and queries to Azure Table Storage
+- **Y-Shaped Pipeline** — Unified processing for text and audio inputs
+- **Hybrid RAG** — BM25 keyword search (40%) + semantic search (60%) via `EnsembleRetriever`
+- **Image-Aware Indexing** — OCR extracts text from figures, charts, and diagrams in PDFs/PPTX
+- **LaTeX Normalization** — Regex-based math notation conversion before embedding
+- **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
+- **Source Preview** — Inspect the exact document chunks used to generate each answer
+- **Document Management** — Upload, list, and delete documents via API; persisted to Azure Blob or local folder
+- **Conversation Memory** — Redis-backed session history with in-memory fallback
+- **Multilingual** — English, Hindi, Tamil, and Telugu
+- **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
+- **Rate Limiting** — 10 req/min on chat endpoints, 2 req/min on uploads (slowapi)
+- **Analytics** — Query, response, sources, latency logged to Azure Table Storage
 
 ---
 
 ## Architecture
 
-The backend implements a modular, 4-stage Y-shaped pipeline:
+### Backend Pipeline (4-stage Y-shape)
 
-1. **Input Processing**
-    - **Text**: Preprocessing and cleaning
-    - **Audio**: Transcription via local Whisper model
-2. **Query Refinement**
-    - Language detection and unified query formatting
-3. **RAG Retrieval**
-    - Semantic search using HuggingFace embeddings and ChromaDB (with score thresholds)
-4. **Response Generation**
-    - Final answer generation using Groq API via LCEL chains
-5. **Audio Output**: On-demand TTS generation with caching strategy
+1. **Input Processing** — text preprocessing / Whisper audio transcription
+2. **Query Refinement** — language detection, query formatting
+3. **RAG Retrieval** — BM25 + ChromaDB hybrid search with PyMuPDF/OCR-indexed chunks
+4. **Response Generation** — Groq Llama-3.3-70B via LCEL chain with session history
+
+### RAG Document Pipeline
+
+```
+PDF / PPTX / MD
+       ↓
+  PyMuPDF parse (per-page)
+       ↓
+  Image extraction → Tesseract OCR
+       ↓
+  LaTeX normalization (latex_utils.py)
+       ↓
+  ChromaDB (semantic) + BM25 index
+       ↓
+  EnsembleRetriever (0.4 BM25 / 0.6 semantic)
+```
 
 ---
 
-## Quick Start (Docker)
-
-Run the entire stack (Frontend + Backend + Redis) with a single command:
+## Quick Start
 
 ```bash
-# Start all services
+# Full stack with Docker (recommended)
 docker compose up --build
+# Backend: http://localhost:8000
+# Frontend: http://localhost:8081
 
-# Backend API: http://localhost:8000
-# Frontend App: http://localhost:8081
-```
-
----
-
-## Manual Setup
-
-### 1. Backend
-
-```bash
+# Backend only
 cd backend
-# Install dependencies (Python 3.10+)
 pip install -r requirements.txt
-
-# Create .env file with your environment variables
-cat << EOF > .env
-GROQ_API_KEY=your_groq_api_key_here
-REDIS_URL=redis://localhost:6379
-EOF
-
-# Start the FastAPI server
+# Add GROQ_API_KEY to .env
 python main.py
-```
 
-### 2. Frontend
-
-```bash
+# Frontend only
 cd frontend
-# Install dependencies
 npm install
-
-# Start the Expo app
 npm start
 ```
+
+### System dependencies (for OCR)
+
+```bash
+# Fedora/RHEL
+sudo dnf install tesseract tesseract-langpack-eng
+
+# Ubuntu/Debian
+sudo apt install tesseract-ocr tesseract-ocr-eng
+```
+
+OCR is optional — the system falls back gracefully if Tesseract is not installed.
 
 ---
 
 ## Environment Variables
 
-| Variable | Description | Required | Default |
+| Variable | Required | Default | Description |
 |---|---|---|---|
-| `GROQ_API_KEY` | API Key for Llama 3 on Groq | Yes | — |
-| `REDIS_URL` | Redis connection string for session history | No | `redis://localhost:6379` (Falls back to in-memory if invalid) |
-| `AZURE_STORAGE_CONNECTION_STRING`| Syncs documents from blob storage & logs to Table Storage | No | Uses local `documents/` folder & skips logging |
+| `GROQ_API_KEY` | Yes | — | Groq API key for Llama 3.3-70B |
+| `REDIS_URL` | No | `redis://localhost:6379` | Session memory (falls back to in-memory) |
+| `AZURE_STORAGE_CONNECTION_STRING` | No | — | Enables Azure Blob document sync + Table Storage logging |
+| `AZURE_STORAGE_CONTAINER_NAME` | No | `documents` | Blob container name |
+| `ALLOWED_ORIGINS` | No | `localhost:8081,8080,19006` | Comma-separated CORS origins |
+| `MAX_MESSAGE_LENGTH` | No | `1000` | Max chat message characters |
+| `MAX_AUDIO_SIZE_MB` | No | `10` | Max audio upload size |
+| `MAX_DOCUMENT_SIZE_MB` | No | `20` | Max document upload size |
 
 ---
 
@@ -113,41 +122,65 @@ npm start
 ```
 ADK/
 ├── backend/
-│   ├── main.py              # FastAPI server & streaming routes
+│   ├── main.py              # FastAPI server, rate limiting, all endpoints
 │   ├── pipeline.py          # Y-shaped pipeline orchestrator
-│   ├── rag.py               # RAG Public API & Singleton
-│   ├── vectorstore.py       # ChromaDB setup, chunking, & LCEL chain
-│   ├── memory.py            # Redis / In-memory conversation history
-│   ├── blob_sync.py         # Azure Blob Storage document synchronization
+│   ├── rag.py               # RAG singleton and public API
+│   ├── vectorstore.py       # PyMuPDF, OCR, BM25+semantic hybrid retrieval
+│   ├── latex_utils.py       # LaTeX/math notation normalization
+│   ├── memory.py            # Redis / in-memory conversation history
+│   ├── blob_sync.py         # Azure Blob Storage sync, upload, delete
 │   ├── rag_logger.py        # Azure Table Storage analytics logging
-│   ├── requirements.txt     # Python dependencies
+│   ├── requirements.txt
 │   └── documents/           # Knowledge base files (PDF/PPTX/MD)
 │
 ├── frontend/
 │   ├── app/
-│   │   └── index.tsx        # Main chat interface with Streaming
+│   │   ├── index.tsx        # Main chat screen (streaming toggle, document panel)
+│   │   └── _layout.tsx      # Root layout and error boundary
 │   ├── components/
-│   │   ├── chat-messages.tsx # Message list display & source tags
-│   │   └── ...
+│   │   ├── chat-messages.tsx     # Message list, source tags, source preview modal
+│   │   ├── chat-input.tsx        # Animated send/mic/stop input bar
+│   │   ├── language-selector.tsx # Language picker with flag + native name
+│   │   └── documents-panel.tsx   # Document upload/list/delete panel
+│   ├── constants/
+│   │   └── theme.ts         # Design tokens: Colors, Radii, Shadows
 │   └── services/
-│       └── api.ts           # Axios client configured for SSE and Long-polling
-└── docker-compose.yml       # Orchestrates App, Backend, and Redis
+│       └── api.ts           # API client with SSE streaming + document endpoints
+│
+└── docker-compose.yml
 ```
+
+---
+
+## API Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Vector store status, chunk count, Redis status |
+| `POST` | `/chat/text` | Text chat (supports `stream=true`) |
+| `POST` | `/chat/audio` | Audio chat with Whisper transcription |
+| `POST` | `/tts/generate` | On-demand TTS generation |
+| `GET` | `/documents/list` | List indexed documents with chunk counts |
+| `POST` | `/documents/upload` | Upload and index a document |
+| `DELETE` | `/documents/{filename}` | Delete a document and rebuild index |
+| `GET` | `/documents/chunks` | Fetch chunks for a document (with optional query ranking) |
+| `POST` | `/documents/refresh` | Re-sync from Azure Blob and rebuild vector store |
 
 ---
 
 ## Deployment
 
-This project is optimized for **Azure Container Apps**:
-- **Azure Blob Storage** for dynamic document management (`documents` container)
-- **Azure Table Storage** for RAG analytics (`raglogs` table)
-- **Azure Cache for Redis** for persistent, scalable session memory
-- **Azure Container Registry** for secure image hosting
+Optimized for **Azure Container Apps**:
 
-The backend, frontend, and database layers scale independently, ensuring reliability under load.
+- **Azure Blob Storage** — document persistence (`documents` container); local folder fallback for dev
+- **Azure Table Storage** — RAG analytics logging (`raglogs` table)
+- **Azure Cache for Redis** — scalable session memory
+- **Azure Container Registry** — image hosting
+
+Set `AZURE_STORAGE_CONNECTION_STRING` in the Container App's environment variables to enable all Azure features. Without it, the app runs fully locally.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License. See [LICENSE](LICENSE) for details.
