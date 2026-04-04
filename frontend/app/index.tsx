@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,12 +7,17 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors, Radii, Shadows } from '@/constants/theme';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
+import { DocumentsPanel } from '@/components/documents-panel';
 import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
@@ -24,6 +29,31 @@ export default function ChatScreen() {
   const [useStreaming, setUseStreaming] = useState(false);
   // Session ID — generated once per app session for conversation memory
   const [sessionId] = useState(() => `session_${Date.now()}`);
+
+  const [showDocuments, setShowDocuments] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initStatus, setInitStatus] = useState('System initializing...');
+
+  useEffect(() => {
+    const checkHealth = async () => {
+      const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
+      const API_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
+      try {
+        const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(10000) });
+        const data = await res.json();
+        if (data.vector_store === 'ready') {
+          setInitStatus('Ready');
+        } else {
+          setInitStatus('System ready (no documents indexed)');
+        }
+      } catch {
+        setInitStatus('Backend unavailable — check your connection');
+      } finally {
+        setIsInitializing(false);
+      }
+    };
+    checkHealth();
+  }, []);
 
   // Audio playback state
   const [playingMessageId, setPlayingMessageId] = useState<string | null>(null);
@@ -293,14 +323,48 @@ export default function ChatScreen() {
     }
   };
 
+  if (isInitializing) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.initContainer}>
+          <View style={styles.initIconWrap}>
+            <Ionicons name="sparkles" size={28} color={Colors.amber} />
+          </View>
+          <ActivityIndicator size="large" color={Colors.amber} />
+          <Text style={styles.initText}>{initStatus}</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>AI Chat Assistant</Text>
-        <LanguageSelector
-          selectedLanguage={selectedLanguage}
-          onSelectLanguage={setSelectedLanguage}
-        />
+      <DocumentsPanel visible={showDocuments} onClose={() => setShowDocuments(false)} />
+
+      <View style={[styles.header, Shadows.card]}>
+        <TouchableOpacity
+          onPress={() => setShowDocuments(true)}
+          style={styles.iconBtn}
+          accessibilityLabel="Manage documents"
+        >
+          <Ionicons name="folder-open-outline" size={18} color={Colors.amber} />
+        </TouchableOpacity>
+
+        <Text style={styles.title}>AI Chat</Text>
+
+        <View style={styles.headerControls}>
+          <TouchableOpacity
+            onPress={() => setUseStreaming((v) => !v)}
+            style={[styles.streamToggle, useStreaming && styles.streamToggleActive]}
+            accessibilityLabel={useStreaming ? 'Disable streaming' : 'Enable streaming'}
+          >
+            <Ionicons name="flash" size={12} color={useStreaming ? '#FFFFFF' : Colors.textMuted} />
+            <Text style={[styles.streamToggleText, useStreaming && styles.streamToggleTextActive]}>
+              Stream
+            </Text>
+          </TouchableOpacity>
+          <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -331,24 +395,79 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.bg,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    backgroundColor: Colors.surface,
+    zIndex: 10,
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.sm,
+    backgroundColor: Colors.amberLight,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  chatContainer: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.text,
     flex: 1,
+    textAlign: 'center',
+  },
+  headerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  streamToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: Radii.full,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceWarm,
+  },
+  streamToggleActive: {
+    backgroundColor: Colors.amber,
+    borderColor: Colors.amber,
+  },
+  streamToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  streamToggleTextActive: {
+    color: '#FFFFFF',
+  },
+  chatContainer: { flex: 1 },
+  initContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 18,
+    backgroundColor: Colors.bg,
+  },
+  initIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: Radii.xl,
+    backgroundColor: Colors.amberLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  initText: {
+    fontSize: 15,
+    color: Colors.textMuted,
   },
 });
