@@ -27,7 +27,9 @@ Backend: **FastAPI**
 ## Features
 
 - **Y-Shaped Pipeline** — Unified processing for text and audio inputs
-- **Hybrid RAG** — BM25 keyword search (40%) + semantic search (60%) via `EnsembleRetriever`
+- **Hybrid RAG** — BM25 keyword search (40%) + semantic search (60%) via `EnsembleRetriever` (k=10 per retriever, deduplicated)
+- **Document Structure Indexing** — TOC, chapter headings, and slide titles extracted at ingestion as dedicated structure chunks; injected automatically for structural queries ("what sections are in this book?")
+- **Metadata-Enriched Context** — Retrieved chunks carry `[Source: file.pdf, Page N]` headers so the LLM can reason about document layout and location
 - **Image-Aware Indexing** — OCR extracts text from figures, charts, and diagrams in PDFs/PPTX
 - **LaTeX Normalization** — Regex-based math notation conversion before embedding
 - **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
@@ -47,7 +49,7 @@ Backend: **FastAPI**
 
 1. **Input Processing** — text preprocessing / Whisper audio transcription
 2. **Query Refinement** — language detection, query formatting
-3. **RAG Retrieval** — BM25 + ChromaDB hybrid search with PyMuPDF/OCR-indexed chunks
+3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search; structure-chunk injection for structural queries; deduplication and metadata-enriched context assembly
 4. **Response Generation** — Groq Llama-3.3-70B via LCEL chain with session history
 
 ### RAG Document Pipeline
@@ -55,15 +57,21 @@ Backend: **FastAPI**
 ```
 PDF / PPTX / MD
        ↓
+  Structure extraction (TOC / headings / slide titles) → structure chunk
+       ↓
   PyMuPDF parse (per-page)
        ↓
   Image extraction → Tesseract OCR
        ↓
   LaTeX normalization (latex_utils.py)
        ↓
-  ChromaDB (semantic) + BM25 index
+  Per-type chunking (PDF: 800 chars, MD: 600 chars, PPTX: 1 per slide)
+       ↓
+  ChromaDB (semantic, k=10) + BM25 index (k=10)
        ↓
   EnsembleRetriever (0.4 BM25 / 0.6 semantic)
+       ↓
+  Deduplication → structural query routing → metadata-enriched context
 ```
 
 ---
