@@ -24,7 +24,12 @@ from contextlib import asynccontextmanager
 load_dotenv()
 
 
+ENABLE_RAG_EVAL = os.environ.get("ENABLE_RAG_EVAL", "false").lower() == "true"
+
+
 def _eval_and_update(log_id: str, partition_key: str, query: str, context: str, answer: str):
+    if not ENABLE_RAG_EVAL:
+        return
     scores = evaluate_rag(query, context, answer)
     update_eval_scores(log_id, partition_key, scores)
 
