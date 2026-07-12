@@ -11,12 +11,13 @@ services:
 
   backend:
     build: ./backend
-    ports: 
+    ports:
       - "8000:8000"
     networks:
       - app-network
     depends_on:
       - redis
+    env_file: ./backend/.env
     environment:
       - REDIS_URL=redis://redis:6379
     volumes:
@@ -26,14 +27,11 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8081:8081"
+      - "8081:80"
     depends_on:
       - backend
     networks:
       - app-network
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
 
 networks:
  app-network:

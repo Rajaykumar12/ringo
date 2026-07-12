@@ -4,11 +4,11 @@ name: Trigger auto deployment for adk-frontend
 on:
   # Automatically trigger it when detected changes in repo
   push:
-    branches: 
+    branches:
       [ main ]
     paths:
-    - '**'
-    - '.github/workflows/adk-frontend-AutoDeployTrigger-2e58d077-9a79-488b-a98c-ba1d7b283200.yml'
+      - 'frontend/**'
+      - '.github/workflows/adk-frontend-AutoDeployTrigger-2e58d077-9a79-488b-a98c-ba1d7b283200.yml'
 
   # Allow manual trigger 
   workflow_dispatch:      
@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout to the branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v2

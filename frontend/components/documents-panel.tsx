@@ -77,22 +77,23 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
     }
   };
 
-  const handleDelete = (filename: string) => {
-    Alert.alert('Remove Document', `Remove "${filename}" from the index?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteDocument(filename);
-            await fetchDocuments();
-          } catch (e: any) {
-            Alert.alert('Error', e?.response?.data?.detail ?? 'Delete failed');
-          }
-        },
-      },
-    ]);
+  const handleDelete = async (filename: string) => {
+    const confirmed = Platform.OS === 'web'
+      ? window.confirm(`Remove "${filename}" from the index?`)
+      : await new Promise<boolean>((resolve) =>
+          Alert.alert('Remove Document', `Remove "${filename}" from the index?`, [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Remove', style: 'destructive', onPress: () => resolve(true) },
+          ])
+        );
+    if (!confirmed) return;
+    try {
+      await deleteDocument(filename);
+      await fetchDocuments();
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail ?? 'Delete failed';
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Error', msg);
+    }
   };
 
   const getTypeIcon = (type: string) => TYPE_ICON[type] ?? TYPE_ICON.markdown;
@@ -180,9 +181,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
                   </View>
                   <View style={styles.docInfo}>
                     <Text style={styles.docName} numberOfLines={1}>{doc.filename}</Text>
-                    <Text style={styles.docMeta}>
-                      {doc.type.toUpperCase()} · {doc.chunks} chunk{doc.chunks !== 1 ? 's' : ''}
-                    </Text>
+                    <Text style={styles.docMeta}>{doc.type.toUpperCase()}</Text>
                   </View>
                   <TouchableOpacity
                     onPress={() => handleDelete(doc.filename)}
@@ -242,7 +241,7 @@ const styles = StyleSheet.create({
       default: { elevation: 4 },
     }),
   },
-  uploadBtnDisabled: { backgroundColor: '#E6A84A' },
+  uploadBtnDisabled: { backgroundColor: Colors.textFaint },
   uploadBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   uploadBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   hint: { textAlign: 'center', fontSize: 12, color: Colors.textFaint },

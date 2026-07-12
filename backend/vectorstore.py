@@ -9,10 +9,13 @@ from typing import List, Optional
 
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
+import warnings
+from langchain_core._api.deprecation import LangChainDeprecationWarning
+warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
@@ -66,7 +69,7 @@ class LangChainRAG:
         sync_documents_from_blob(self.documents_folder)
 
         # Embeddings — local HuggingFace, no API cost
-        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_huggingface import HuggingFaceEmbeddings
         self.embeddings = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2", model_kwargs={"device": "cpu"}
         )
@@ -109,7 +112,7 @@ class LangChainRAG:
                 for t, m in zip(result["documents"], result["metadatas"])
                 if t and t.strip()
             ]
-            self.bm25_retriever = BM25Retriever.from_documents(docs, k=5)
+            self.bm25_retriever = BM25Retriever.from_documents(docs, k=10)
             print(f"BM25 index built ({len(docs)} chunks)")
 
             self._build_rag_chain()
@@ -245,6 +248,110 @@ Context:
             print(f"Error loading {filename}: {e}")
         return []
 
+    def _extract_pdf_structure(self, filepath: str, filename: str) -> Optional[Document]:
+        """Extract TOC or heading structure from a PDF as a single structure chunk."""
+        try:
+            import fitz
+            import re
+            import statistics
+        except ImportError:
+            return None
+        try:
+            doc = fitz.open(filepath)
+            toc = doc.get_toc(simple=True)
+            if len(toc) >= 2:
+                lines = [f"Document Structure: {filename}", "Table of Contents:"]
+                for level, title, page in toc:
+                    indent = "  " * (level - 1)
+                    lines.append(f"{indent}- {title} (page {page})")
+                return Document(
+                    page_content="\n".join(lines),
+                    metadata={"source": filename, "type": "pdf", "chunk_type": "structure", "page": 0},
+                )
+            # Fallback: heading heuristic from first 30 pages
+            all_sizes = []
+            for page in doc[:30]:
+                for block in page.get_text("dict").get("blocks", []):
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            all_sizes.append(span.get("size", 0))
+            if not all_sizes:
+                return None
+            median_size = statistics.median(all_sizes)
+            seen_headings: list = []
+            seen_set: set = set()
+            for page in doc[:30]:
+                for block in page.get_text("dict").get("blocks", []):
+                    for line in block.get("lines", []):
+                        for span in line.get("spans", []):
+                            text = span.get("text", "").strip()
+                            if not (5 <= len(text) <= 150):
+                                continue
+                            if re.fullmatch(r'[\d\s\W]+', text):
+                                continue
+                            is_large = span.get("size", 0) > median_size
+                            is_bold = bool(span.get("flags", 0) & 16)
+                            if (is_large or is_bold) and text not in seen_set:
+                                seen_set.add(text)
+                                seen_headings.append(text)
+            if len(seen_headings) < 3:
+                return None
+            lines = [f"Document Structure: {filename}", "Detected Headings:"]
+            lines.extend(f"- {h}" for h in seen_headings)
+            return Document(
+                page_content="\n".join(lines),
+                metadata={"source": filename, "type": "pdf", "chunk_type": "structure", "page": 0},
+            )
+        except Exception as e:
+            print(f"Structure extraction failed for {filename}: {e}")
+            return None
+
+    def _extract_pptx_structure(self, filepath: str, filename: str) -> Optional[Document]:
+        """Extract slide titles from a PPTX as a single structure chunk."""
+        try:
+            from pptx import Presentation as _Prs
+        except ImportError:
+            return None
+        try:
+            prs = _Prs(filepath)
+            titles = []
+            for i, slide in enumerate(prs.slides):
+                title_shape = slide.shapes.title
+                if title_shape and title_shape.text.strip():
+                    titles.append((i + 1, title_shape.text.strip()))
+            if len(titles) < 2:
+                return None
+            lines = [f"Document Structure: {filename}", "Slide Titles:"]
+            lines.extend(f"- Slide {num}: {title}" for num, title in titles)
+            return Document(
+                page_content="\n".join(lines),
+                metadata={"source": filename, "type": "pptx", "chunk_type": "structure", "slide": 0},
+            )
+        except Exception as e:
+            print(f"Structure extraction failed for {filename}: {e}")
+            return None
+
+    def _extract_markdown_structure(self, filepath: str, filename: str) -> Optional[Document]:
+        """Extract ATX headings from a Markdown file as a single structure chunk."""
+        import re
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                text = f.read()
+            headings = re.findall(r'^(#{1,6})\s+(.+)', text, re.MULTILINE)
+            if len(headings) < 2:
+                return None
+            lines = [f"Document Structure: {filename}", "Headings:"]
+            for hashes, heading_text in headings:
+                indent = "  " * (len(hashes) - 1)
+                lines.append(f"{indent}{'#' * len(hashes)} {heading_text.strip()}")
+            return Document(
+                page_content="\n".join(lines),
+                metadata={"source": filename, "type": "markdown", "chunk_type": "structure"},
+            )
+        except Exception as e:
+            print(f"Structure extraction failed for {filename}: {e}")
+            return None
+
     def load_documents(self) -> List[Document]:
         """Load all documents from the folder."""
         sync_documents_from_blob(self.documents_folder)
@@ -255,6 +362,7 @@ Context:
             print(f"Created {self.documents_folder} folder.")
             return documents
 
+        structure_docs: List[Document] = []
         for filename in os.listdir(self.documents_folder):
             filepath = os.path.join(self.documents_folder, filename)
             ext = os.path.splitext(filename)[1].lower()
@@ -265,17 +373,34 @@ Context:
 
             if ext == ".pdf":
                 documents.extend(self._load_pdf(filepath, filename))
+                struct = self._extract_pdf_structure(filepath, filename)
             elif ext == ".pptx":
                 documents.extend(self._load_pptx(filepath, filename))
+                struct = self._extract_pptx_structure(filepath, filename)
             elif ext == ".md":
                 documents.extend(self._load_markdown(filepath, filename))
+                struct = self._extract_markdown_structure(filepath, filename)
+            else:
+                struct = None
 
-        return documents
+            if struct:
+                structure_docs.append(struct)
+                print(f"Structure chunk extracted: {filename}")
+
+        return structure_docs + documents
 
     def create_vectorstore(self, documents: List[Document]):
         """Index documents into ChromaDB and build BM25 retriever."""
         if not documents:
-            print("No documents to index")
+            print("No documents to index — clearing vectorstore")
+            if self.vectorstore is not None:
+                try:
+                    self.vectorstore.delete_collection()
+                except Exception:
+                    pass
+                self.vectorstore = None
+            self.bm25_retriever = None
+            self.rag_chain_with_history = None
             return
 
         try:
@@ -286,6 +411,9 @@ Context:
 
             all_chunks: List[Document] = []
             for doc in documents:
+                if doc.metadata.get("chunk_type") == "structure":
+                    all_chunks.append(doc)  # Never split structure chunks
+                    continue
                 doc_type = doc.metadata.get("type", "")
                 if doc_type == "pptx":
                     all_chunks.append(doc)  # Already 1 doc per slide
@@ -308,6 +436,14 @@ Context:
 
             print(f"Created {len(all_chunks)} chunks across {len(documents)} source pages/slides")
 
+            # Clear any existing collection so deleted documents are fully removed
+            if self.vectorstore is not None:
+                try:
+                    self.vectorstore.delete_collection()
+                except Exception:
+                    pass
+                self.vectorstore = None
+
             self.vectorstore = Chroma.from_documents(
                 all_chunks,
                 self.embeddings,
@@ -316,7 +452,7 @@ Context:
             print(f"ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
 
             # Build BM25 from the same chunks
-            self.bm25_retriever = BM25Retriever.from_documents(all_chunks, k=5)
+            self.bm25_retriever = BM25Retriever.from_documents(all_chunks, k=10)
             print(f"BM25 index built ({len(all_chunks)} chunks)")
 
             self._build_rag_chain()
@@ -334,7 +470,7 @@ Context:
         if not self.vectorstore:
             return None
 
-        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 5})
+        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 10})
 
         if self.bm25_retriever:
             return EnsembleRetriever(

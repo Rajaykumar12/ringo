@@ -5,6 +5,10 @@ from rag import get_rag_response
 
 load_dotenv()
 
+
+class TranscriptionError(Exception):
+    """Raised when audio transcription fails due to inaudible or empty content."""
+
 class TextInputProcessor:
     # Stage 1a: Minimal text preprocessing
     @staticmethod
@@ -42,8 +46,8 @@ class AudioInputProcessor:
             try:
                 result = self.model.transcribe(temp_audio_path)
                 transcribed_text = result["text"].strip()
-                if not transcribed_text: raise ValueError("Empty transcription")
-                
+                if not transcribed_text:
+                    raise TranscriptionError("No speech detected in the audio")
                 return {
                     "text": transcribed_text,
                     "source": "audio",
@@ -51,6 +55,8 @@ class AudioInputProcessor:
                 }
             finally:
                 if os.path.exists(temp_audio_path): os.remove(temp_audio_path)
+        except TranscriptionError:
+            raise
         except Exception as e:
             raise RuntimeError(f"Transcription failed: {str(e)}")
 
@@ -80,6 +86,7 @@ class RAGRetriever:
         return {
             "response": result["response"],
             "sources": result.get("sources", []),
+            "context": result.get("context", ""),
             "query": query,
             "language": language,
             "source": refined_query["source"]
@@ -92,6 +99,7 @@ class ResponseGenerator:
             "success": True,
             "response": retrieval_result["response"],
             "sources": retrieval_result.get("sources", []),
+            "context": retrieval_result.get("context", ""),
             "language": retrieval_result["language"],
             "source": retrieval_result["source"],
             "query": retrieval_result["query"]

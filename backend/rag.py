@@ -3,10 +3,37 @@ rag.py — Public API for the RAG system.
 Initializes the singleton instance and provides interface methods.
 """
 from typing import Dict, Any
+from langchain_core.documents import Document
 from vectorstore import LangChainRAG
 
 # Singleton instance
 rag_system = None
+
+_STRUCTURAL_KW = frozenset([
+    "section", "chapter", "topic", "overview", "outline", "contents",
+    "table of contents", "index", "structure", "what is in", "what are",
+    "list all", "list the", "slide", "slides", "cover", "about this",
+    "this book", "this document", "this presentation",
+])
+
+
+def _is_structural_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _STRUCTURAL_KW)
+
+
+def _format_chunk(doc: Document) -> str:
+    meta = doc.metadata
+    source = meta.get("source", "Unknown")
+    if meta.get("chunk_type") == "structure":
+        header = f"[Source: {source}, Document Structure]"
+    elif meta.get("page") and meta["page"] != 0:
+        header = f"[Source: {source}, Page {meta['page']}]"
+    elif meta.get("slide") and meta["slide"] != 0:
+        header = f"[Source: {source}, Slide {meta['slide']}]"
+    else:
+        header = f"[Source: {source}]"
+    return header + "\n" + doc.page_content
 
 
 def initialize_rag():
@@ -27,7 +54,7 @@ def refresh_documents():
 
 def get_rag_response(query: str, language: str = "en", session_id: str = "default") -> Dict[str, Any]:
     """
-    Returns dict: {"response": str, "sources": list[str]}
+    Returns dict: {"response": str, "sources": list[str], "context": str}
     Sources are the document filenames that contributed context to the answer.
     """
     global rag_system
@@ -38,6 +65,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
         return {
             "response": "System is running in basic mode (no documents indexed). Please add documents to enable RAG.",
             "sources": [],
+            "context": "",
         }
 
     if not rag_system.rag_chain_with_history:
@@ -47,13 +75,39 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
     language_name = language_map.get(language, "English")
 
     try:
-        # Retrieve relevant docs with score threshold
+        # Retrieve relevant docs
         retriever = rag_system.get_retriever()
         docs = retriever.invoke(query)
 
+        # Deduplicate by content hash
+        seen: set = set()
+        deduped = []
+        for d in docs:
+            h = hash(d.page_content.strip())
+            if h not in seen:
+                seen.add(h)
+                deduped.append(d)
+        docs = deduped
+
+        # For structural queries, prepend dedicated structure chunks
+        if _is_structural_query(query) and rag_system.vectorstore:
+            try:
+                result = rag_system.vectorstore._collection.get(
+                    where={"chunk_type": "structure"},
+                    include=["documents", "metadatas"],
+                )
+                struct_docs = [
+                    Document(page_content=t, metadata=m)
+                    for t, m in zip(result["documents"], result["metadatas"])
+                    if t and t.strip()
+                ]
+                docs = struct_docs + docs
+            except Exception as e:
+                print(f"Structure injection failed (non-fatal): {e}")
+
         # Collect unique source filenames
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
-        context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
+        context = "\n\n".join(_format_chunk(d) for d in docs) if docs else "No relevant context found."
 
         # Invoke chain with Redis-backed conversation history
         response = rag_system.rag_chain_with_history.invoke(
@@ -61,8 +115,8 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
             config={"configurable": {"session_id": session_id}},
         )
 
-        return {"response": response, "sources": sources}
+        return {"response": response, "sources": sources, "context": context}
 
     except Exception as e:
         print(f"RAG Error: {e}")
-        return {"response": "Error processing request.", "sources": []}
+        return {"response": "Error processing request.", "sources": [], "context": ""}

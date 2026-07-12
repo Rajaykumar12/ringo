@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(28,25,23,0.45)',
+    backgroundColor: 'rgba(17,24,39,0.45)',
     justifyContent: 'center',
     alignItems: 'center',
   },

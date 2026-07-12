@@ -75,9 +75,16 @@ export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: C
           multiline
           maxLength={1000}
           editable={!isLoading}
-          onSubmitEditing={handleSend}
+          onSubmitEditing={Platform.OS !== 'web' ? handleSend : undefined}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
+          // @ts-ignore — web key interception: Enter sends, Shift+Enter newlines
+          onKeyPress={(e: any) => {
+            if (Platform.OS === 'web' && e.nativeEvent?.key === 'Enter' && !e.nativeEvent?.shiftKey) {
+              e.preventDefault?.();
+              handleSend();
+            }
+          }}
           // @ts-ignore
           {...(Platform.OS === 'web' && { style: [styles.input, { outline: 'none' }] })}
         />

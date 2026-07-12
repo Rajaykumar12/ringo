@@ -24,3 +24,11 @@ azure-storage-blob
 redis
 azure-data-tables
 slowapi
+
+langchain-huggingface
+langchain-chroma
+
+# Testing
+pytest
+pytest-asyncio
+httpx

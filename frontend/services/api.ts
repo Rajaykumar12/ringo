@@ -57,8 +57,9 @@ export const sendTextMessage = async (
 
 export const sendTextMessageStream = async (
   message: string,
-  onChunk: (chunk: { type: string; value: string }) => void,
-  language?: string
+  onChunk: (chunk: { type: string; value: string; sources?: string[] }) => void,
+  language?: string,
+  session_id: string = 'default'
 ): Promise<void> => {
   const formData = new FormData();
   formData.append('message', message);
@@ -66,10 +67,12 @@ export const sendTextMessageStream = async (
     formData.append('language', language);
   }
   formData.append('stream', 'true');
+  formData.append('session_id', session_id);
 
   const response = await fetch(`${API_BASE_URL}/chat/text`, {
     method: 'POST',
     body: formData,
+    signal: AbortSignal.timeout(60000),
   });
 
   if (!response.ok) {
@@ -115,12 +118,14 @@ export const sendAudioMessage = async (
     const blob = await response.blob();
     formData.append('file', blob, 'audio.wav');
   } else {
-    // React Native mobile
+    // React Native mobile — detect actual format from URI extension
+    const ext = audioUri.split('.').pop()?.toLowerCase() ?? 'wav';
+    const mimeType = ext === 'm4a' ? 'audio/mp4' : ext === 'mp3' ? 'audio/mpeg' : 'audio/wav';
     // @ts-ignore - React Native FormData supports file objects
     formData.append('file', {
       uri: audioUri,
-      type: 'audio/wav',
-      name: 'audio.wav',
+      type: mimeType,
+      name: `audio.${ext}`,
     } as any);
   }
 

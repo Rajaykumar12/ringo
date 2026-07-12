@@ -1,8 +1,10 @@
+import asyncio
 import os
+import re
 import time
 import json
 import uuid
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -11,19 +13,42 @@ from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from pipeline import PipelineOrchestrator, QueryRefiner
+from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
 from rag import initialize_rag, refresh_documents, get_rag_response, rag_system as _rag_ref
-from rag_logger import log_rag_call
+from rag_logger import log_rag_call, update_eval_scores, log_feedback
+from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
 
 from contextlib import asynccontextmanager
 
 load_dotenv()
 
+
+def _eval_and_update(log_id: str, partition_key: str, query: str, context: str, answer: str):
+    scores = evaluate_rag(query, context, answer)
+    update_eval_scores(log_id, partition_key, scores)
+
 MAX_MESSAGE_LENGTH = int(os.environ.get("MAX_MESSAGE_LENGTH", 1000))
+MAX_TTS_LENGTH = int(os.environ.get("MAX_TTS_LENGTH", 5000))
 MAX_AUDIO_SIZE_MB = int(os.environ.get("MAX_AUDIO_SIZE_MB", 10))
+MAX_SESSION_ID_LENGTH = 128
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
 pipeline = None
+
+
+def _validate_session_id(session_id: str) -> None:
+    if len(session_id) > MAX_SESSION_ID_LENGTH:
+        raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
+
+
+async def require_admin_key(request: Request) -> None:
+    """Dependency: require X-API-Key header when ADMIN_API_KEY env var is set."""
+    if not ADMIN_API_KEY:
+        return
+    key = request.headers.get("X-API-Key", "")
+    if key != ADMIN_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 # ── App lifecycle ──────────────────────────────────────────────────────────────
@@ -61,7 +86,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     print(f"Validation error: {exc.errors()}")
-    # exc.errors() may contain non-serializable objects (e.g. ValueError in ctx)
     errors = json.loads(json.dumps(exc.errors(), default=str))
     return JSONResponse(status_code=422, content={"detail": errors})
 
@@ -93,13 +117,12 @@ async def root():
         "status": "healthy",
         "service": "Multilingual AI Chat API",
         "version": "2.0.0",
-        "endpoints": ["/chat/text", "/chat/audio", "/health", "/documents/refresh"],
+        "endpoints": ["/chat/text", "/chat/audio", "/feedback", "/health", "/documents/refresh"],
     }
 
 
 @app.get("/health")
 async def health():
-    """[Medium #10] Real health endpoint — reports actual vector store state."""
     from rag import rag_system
     chunk_count = 0
     vs_status = "uninitialized"
@@ -132,18 +155,18 @@ async def health():
 @limiter.limit("10/minute")
 async def text_chat(
     request: Request,
+    background_tasks: BackgroundTasks,
     message: str = Form(...),
     language: Optional[str] = Form(None),
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
     from rag import rag_system, initialize_rag
-    
-    # Input validation
+
     if len(message) > MAX_MESSAGE_LENGTH:
         raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_MESSAGE_LENGTH} characters)")
+    _validate_session_id(session_id)
 
-    # [High #6] Real SSE streaming
     if stream:
         async def stream_response():
             if not rag_system:
@@ -157,7 +180,7 @@ async def text_chat(
 
             if not rag_system.vectorstore:
                 yield f"data: {json.dumps({'type': 'content', 'value': 'No documents indexed.'})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'value': ''})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': []})}\n\n"
                 return
 
             retriever = rag_system.get_retriever()
@@ -168,15 +191,25 @@ async def text_chat(
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
 
             full_response = ""
-            async for chunk in rag_system.rag_chain_with_history.astream(
-                {"context": context, "question": message, "language": lang_name},
-                config={"configurable": {"session_id": session_id}},
-            ):
-                full_response += chunk
-                yield f"data: {json.dumps({'type': 'content', 'value': chunk})}\n\n"
+            try:
+                async for chunk in rag_system.rag_chain_with_history.astream(
+                    {"context": context, "question": message, "language": lang_name},
+                    config={"configurable": {"session_id": session_id}},
+                ):
+                    if not isinstance(chunk, str):
+                        continue
+                    full_response += chunk
+                    yield f"data: {json.dumps({'type': 'content', 'value': chunk})}\n\n"
+            except Exception as e:
+                print(f"[stream_response] LLM streaming error: {type(e).__name__}: {e}")
+                yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
-            log_rag_call(message, full_response, sources, lang, 0)
-            yield f"data: {json.dumps({'type': 'done', 'value': ''})}\n\n"
+            log_id, partition_key = log_rag_call(message, full_response, sources, lang, 0, context)
+            asyncio.get_running_loop().run_in_executor(
+                None, _eval_and_update, log_id, partition_key, message, context, full_response
+            )
+            yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources})}\n\n"
 
         return StreamingResponse(stream_response(), media_type="text/event-stream")
 
@@ -185,57 +218,107 @@ async def text_chat(
         start = time.time()
         result = pipeline.process_text(message, language, session_id=session_id)
         latency_ms = int((time.time() - start) * 1000)
-        log_rag_call(
+        context = result.pop("context", "")
+        log_id, partition_key = log_rag_call(
             message, result["response"], result.get("sources", []),
-            result.get("language", "en"), latency_ms
+            result.get("language", "en"), latency_ms, context
         )
+        background_tasks.add_task(
+            _eval_and_update, log_id, partition_key, message, context, result["response"]
+        )
+        result["log_id"] = log_id
+        result["log_date"] = partition_key
         return JSONResponse(content=result)
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in text_chat: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/chat/audio")
 @limiter.limit("10/minute")
 async def audio_chat(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     language: Optional[str] = Form(None),
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
-    try:
-        print(f"Audio received: {file.filename}")
-        audio_bytes = await file.read()
-        if not audio_bytes:
-            raise HTTPException(400, "Empty file")
-        if len(audio_bytes) > MAX_AUDIO_SIZE_MB * 1024 * 1024:
-            raise HTTPException(413, f"Audio file too large (max {MAX_AUDIO_SIZE_MB}MB)")
-        if file.content_type and not file.content_type.startswith("audio/"):
-            raise HTTPException(415, "File must be an audio file")
+    _validate_session_id(session_id)
 
+    # Validate before reading body so client gets a proper 4xx, not 500
+    if file.content_type and not file.content_type.startswith("audio/"):
+        raise HTTPException(status_code=415, detail="File must be an audio file")
+
+    audio_bytes = await file.read()
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(audio_bytes) > MAX_AUDIO_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Audio file too large (max {MAX_AUDIO_SIZE_MB}MB)")
+
+    print(f"Audio received: {file.filename}")
+
+    try:
         start = time.time()
         result = pipeline.process_audio(
             audio_bytes, file.content_type or "audio/wav", language,
             return_audio=False, session_id=session_id
         )
         latency_ms = int((time.time() - start) * 1000)
-        log_rag_call(
-            result.get("query", ""), result["response"],
-            result.get("sources", []), result.get("language", "en"), latency_ms
+        context = result.pop("context", "")
+        query = result.get("query", "")
+        log_id, partition_key = log_rag_call(
+            query, result["response"],
+            result.get("sources", []), result.get("language", "en"), latency_ms, context
         )
+        background_tasks.add_task(
+            _eval_and_update, log_id, partition_key, query, context, result["response"]
+        )
+        result["log_id"] = log_id
+        result["log_date"] = partition_key
         return JSONResponse(content=result)
+    except TranscriptionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in audio_chat: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+_LOG_ID_RE = re.compile(r'^[\w\-]{1,256}$')
+_LOG_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+@app.post("/feedback")
+@limiter.limit("30/minute")
+async def submit_feedback(
+    request: Request,
+    log_id: str = Form(...),
+    log_date: str = Form(...),
+    rating: int = Form(...),
+):
+    if rating not in (0, 1):
+        raise HTTPException(status_code=400, detail="rating must be 0 or 1")
+    if not _LOG_ID_RE.match(log_id):
+        raise HTTPException(status_code=400, detail="Invalid log_id")
+    if not _LOG_DATE_RE.match(log_date):
+        raise HTTPException(status_code=400, detail="Invalid log_date format (expected YYYY-MM-DD)")
+    log_feedback(log_id, log_date, rating)
+    return JSONResponse(content={"success": True})
 
 
 @app.post("/tts/generate")
+@limiter.limit("20/minute")
 async def generate_tts(
+    request: Request,
     text: str = Form(...),
     language: str = Form("en"),
 ):
-    """Generate TTS audio on-demand when user clicks play button."""
+    if len(text) > MAX_TTS_LENGTH:
+        raise HTTPException(status_code=413, detail=f"Text too long (max {MAX_TTS_LENGTH} characters)")
     try:
         retrieval_result = {"response": text, "language": language}
         audio_data = pipeline.response_generator.generate_audio(retrieval_result)
@@ -244,20 +327,24 @@ async def generate_tts(
             "audio_data": audio_data,
             "audio_available": audio_data is not None,
         })
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"TTS Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.post("/documents/refresh")
-async def refresh_docs():
-    """Refresh documents from Azure Blob Storage and rebuild vector store."""
+@app.post("/documents/refresh", dependencies=[Depends(require_admin_key)])
+@limiter.limit("5/minute")
+async def refresh_docs(request: Request):
     try:
         refresh_documents()
         return JSONResponse(content={"success": True, "message": "Documents refreshed successfully"})
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Refresh Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".pptx", ".md"}
@@ -266,7 +353,6 @@ MAX_DOCUMENT_SIZE_MB = int(os.environ.get("MAX_DOCUMENT_SIZE_MB", 20))
 
 @app.get("/documents/list")
 async def list_documents():
-    """List all indexed documents with their chunk counts."""
     from rag import rag_system
     if not rag_system or not rag_system.vectorstore:
         return JSONResponse(content={"documents": []})
@@ -280,14 +366,16 @@ async def list_documents():
                 counts[src] = {"filename": src, "chunks": 0, "type": doc_type}
             counts[src]["chunks"] += 1
         return JSONResponse(content={"documents": list(counts.values())})
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"List documents error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.post("/documents/upload")
+@app.post("/documents/upload", dependencies=[Depends(require_admin_key)])
 @limiter.limit("2/minute")
 async def upload_doc(request: Request, file: UploadFile = File(...)):
-    """Upload a document, persist it (Azure Blob or local), and re-index."""
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(SUPPORTED_UPLOAD_EXTENSIONS)}")
@@ -302,14 +390,15 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
         upload_document(file.filename, data)
         refresh_documents()
         return JSONResponse(content={"success": True, "filename": file.filename, "message": f"'{file.filename}' uploaded and indexed successfully"})
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Upload Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.delete("/documents/{filename}")
+@app.delete("/documents/{filename}", dependencies=[Depends(require_admin_key)])
 async def delete_doc(filename: str):
-    """Delete a document from storage and re-index."""
     ext = os.path.splitext(filename)[1].lower()
     if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Invalid filename")
@@ -317,14 +406,17 @@ async def delete_doc(filename: str):
         delete_document(filename)
         refresh_documents()
         return JSONResponse(content={"success": True, "message": f"'{filename}' deleted and index rebuilt"})
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Delete Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/documents/chunks")
 async def get_document_chunks(source: str, query: str = ""):
-    """Return text chunks for a specific source document, ranked by relevance to query."""
+    if len(source) > 256:
+        raise HTTPException(status_code=400, detail="source parameter too long")
     from rag import rag_system
     if not rag_system or not rag_system.vectorstore:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
@@ -335,7 +427,6 @@ async def get_document_chunks(source: str, query: str = ""):
                 query, k=4, filter={"source": source}
             )
         else:
-            # No query — fetch raw chunks by metadata filter
             result = rag_system.vectorstore._collection.get(
                 where={"source": source}, limit=4
             )
@@ -351,9 +442,11 @@ async def get_document_chunks(source: str, query: str = ""):
             if doc.page_content.strip()
         ]
         return {"source": source, "chunks": chunks}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Chunks Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 if __name__ == "__main__":

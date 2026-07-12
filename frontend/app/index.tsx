@@ -26,7 +26,7 @@ export default function ChatScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
-  const [useStreaming, setUseStreaming] = useState(false);
+  const useStreaming = true;
   // Session ID — generated once per app session for conversation memory
   const [sessionId] = useState(() => `session_${Date.now()}`);
 
@@ -184,9 +184,16 @@ export default function ChatScreen() {
 
         await sendTextMessageStream(
           text,
-          (chunk: { type: string; value: string }) => {
+          (chunk: { type: string; value: string; sources?: string[] }) => {
             if (chunk.type === 'language') {
               detectedLang = chunk.value as Language;
+            } else if (chunk.type === 'sources') {
+              // Capture sources as they arrive, before the response starts
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === aiMessageId ? { ...msg, sources: chunk.sources ?? [] } : msg
+                )
+              );
             } else if (chunk.type === 'content') {
               streamedText += chunk.value;
               setMessages((prev) =>
@@ -195,7 +202,14 @@ export default function ChatScreen() {
                 )
               );
             } else if (chunk.type === 'done') {
-              // Speak the complete response
+              // Merge sources from done chunk in case sources chunk arrived first (no-op if already set)
+              if (chunk.sources && chunk.sources.length > 0) {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId ? { ...msg, sources: chunk.sources } : msg
+                  )
+                );
+              }
               Speech.speak(streamedText, {
                 language: detectedLang === 'en' ? 'en-US' :
                   detectedLang === 'hi' ? 'hi-IN' :
@@ -203,7 +217,8 @@ export default function ChatScreen() {
               });
             }
           },
-          selectedLanguage === 'auto' ? undefined : selectedLanguage
+          selectedLanguage === 'auto' ? undefined : selectedLanguage,
+          sessionId
         );
       } else {
         // Non-streaming mode
@@ -299,7 +314,7 @@ export default function ChatScreen() {
       if (response.transcription) {
         const transcriptionMessage: Message = {
           id: (Date.now() + 1).toString(),
-          text: `You said: "${response.transcription}"`,
+          text: response.transcription,
           sender: 'user',
           timestamp: new Date(),
         };
@@ -353,16 +368,6 @@ export default function ChatScreen() {
         <Text style={styles.title}>AI Chat</Text>
 
         <View style={styles.headerControls}>
-          <TouchableOpacity
-            onPress={() => setUseStreaming((v) => !v)}
-            style={[styles.streamToggle, useStreaming && styles.streamToggleActive]}
-            accessibilityLabel={useStreaming ? 'Disable streaming' : 'Enable streaming'}
-          >
-            <Ionicons name="flash" size={12} color={useStreaming ? '#FFFFFF' : Colors.textMuted} />
-            <Text style={[styles.streamToggleText, useStreaming && styles.streamToggleTextActive]}>
-              Stream
-            </Text>
-          </TouchableOpacity>
           <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
         </View>
       </View>
@@ -425,29 +430,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  streamToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: Radii.full,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surfaceWarm,
-  },
-  streamToggleActive: {
-    backgroundColor: Colors.amber,
-    borderColor: Colors.amber,
-  },
-  streamToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.textMuted,
-  },
-  streamToggleTextActive: {
-    color: '#FFFFFF',
   },
   chatContainer: { flex: 1 },
   initContainer: {

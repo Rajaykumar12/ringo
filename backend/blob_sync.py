@@ -5,6 +5,9 @@ Falls back to local documents/ folder if Azure is not configured.
 """
 import os
 
+ALLOWED_EXTENSIONS = {".pdf", ".pptx", ".md"}
+MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 20 * 1024 * 1024))  # 20 MB default
+
 
 def sync_documents_from_blob(local_folder: str = "documents"):
     """Download documents from Azure Blob Storage to local folder.
@@ -29,23 +32,27 @@ def sync_documents_from_blob(local_folder: str = "documents"):
         container_client = ContainerClient.from_connection_string(connection_string, container_name)
 
         blob_list = list(container_client.list_blobs())
-        blob_names = {blob.name for blob in blob_list}
+        # Use basename for comparison — blob paths may contain subdirectory separators
+        blob_basenames = {os.path.basename(blob.name) for blob in blob_list}
         print(f"Found {len(blob_list)} file(s) in Azure Blob Storage '{container_name}'")
 
         # Delete local files that no longer exist in blob storage
         if os.path.exists(local_folder):
             for local_file in os.listdir(local_folder):
-                if local_file not in blob_names:
+                if local_file not in blob_basenames:
                     local_path = os.path.join(local_folder, local_file)
                     print(f"  Deleting orphaned file: {local_file}")
                     os.remove(local_path)
 
         for blob in blob_list:
-            local_path = os.path.join(local_folder, blob.name)
-            if os.path.exists(local_path) and os.path.getsize(local_path) == blob.size:
-                print(f"  Already up to date: {blob.name}")
+            safe_name = os.path.basename(blob.name)
+            if not safe_name:
                 continue
-            print(f"  Downloading: {blob.name} ({blob.size} bytes)")
+            local_path = os.path.join(local_folder, safe_name)
+            if os.path.exists(local_path) and os.path.getsize(local_path) == blob.size:
+                print(f"  Already up to date: {safe_name}")
+                continue
+            print(f"  Downloading: {safe_name} ({blob.size} bytes)")
             blob_data = container_client.download_blob(blob.name).readall()
             with open(local_path, "wb") as f:
                 f.write(blob_data)
@@ -57,6 +64,14 @@ def sync_documents_from_blob(local_folder: str = "documents"):
 
 def upload_document(filename: str, data: bytes, local_folder: str = "documents") -> None:
     """Upload a document to Azure Blob Storage (or local folder if Azure not configured)."""
+    # Sanitize filename — strip any path components
+    safe_name = os.path.basename(filename)
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise ValueError(f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"File too large ({len(data)} bytes). Maximum is {MAX_UPLOAD_BYTES // (1024*1024)} MB.")
+
     connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
     container_name = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "documents")
 
@@ -64,22 +79,23 @@ def upload_document(filename: str, data: bytes, local_folder: str = "documents")
         try:
             from azure.storage.blob import BlobServiceClient
             client = BlobServiceClient.from_connection_string(connection_string)
-            blob_client = client.get_blob_client(container=container_name, blob=filename)
+            blob_client = client.get_blob_client(container=container_name, blob=safe_name)
             blob_client.upload_blob(data, overwrite=True)
-            print(f"Uploaded '{filename}' to Azure Blob Storage '{container_name}'")
+            print(f"Uploaded '{safe_name}' to Azure Blob Storage '{container_name}'")
             return
         except Exception as e:
             print(f"Azure upload failed: {e}. Saving locally instead.")
 
     # Local fallback
     os.makedirs(local_folder, exist_ok=True)
-    with open(os.path.join(local_folder, filename), "wb") as f:
+    with open(os.path.join(local_folder, safe_name), "wb") as f:
         f.write(data)
-    print(f"Saved '{filename}' to local {local_folder}/")
+    print(f"Saved '{safe_name}' to local {local_folder}/")
 
 
 def delete_document(filename: str, local_folder: str = "documents") -> None:
     """Delete a document from Azure Blob Storage and local folder."""
+    safe_name = os.path.basename(filename)
     connection_string = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
     container_name = os.environ.get("AZURE_STORAGE_CONTAINER_NAME", "documents")
 
@@ -87,12 +103,12 @@ def delete_document(filename: str, local_folder: str = "documents") -> None:
         try:
             from azure.storage.blob import BlobServiceClient
             client = BlobServiceClient.from_connection_string(connection_string)
-            client.get_blob_client(container=container_name, blob=filename).delete_blob()
-            print(f"Deleted '{filename}' from Azure Blob Storage")
+            client.get_blob_client(container=container_name, blob=safe_name).delete_blob()
+            print(f"Deleted '{safe_name}' from Azure Blob Storage")
         except Exception as e:
             print(f"Azure delete failed: {e}")
 
-    local_path = os.path.join(local_folder, filename)
+    local_path = os.path.join(local_folder, safe_name)
     if os.path.exists(local_path):
         os.remove(local_path)
-        print(f"Deleted '{filename}' from local {local_folder}/")
+        print(f"Deleted '{safe_name}' from local {local_folder}/")

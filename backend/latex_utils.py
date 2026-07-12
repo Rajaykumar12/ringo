@@ -167,7 +167,4 @@ def normalize_math(text: str) -> str:
 
     text = re.sub(r'\$([^$\n]+?)\$', replace_inline, text)
 
-    # Bare LaTeX commands still in text (from garbled PDF extraction)
-    text = _apply_substitutions(text)
-
     return text

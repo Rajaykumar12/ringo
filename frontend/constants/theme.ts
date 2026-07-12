@@ -2,28 +2,28 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   // Backgrounds
-  bg:          '#FAFAF8',
+  bg:          '#F9F9F8',
   surface:     '#FFFFFF',
-  surfaceWarm: '#F5F0E8',
-  surfaceMid:  '#EDE8DF',
+  surfaceWarm: '#F3F4F6',
+  surfaceMid:  '#E5E7EB',
 
-  // Amber — primary actions
-  amber:       '#D97706',
-  amberDark:   '#B45309',
-  amberLight:  '#FEF3C7',
+  // Dark gray — primary actions
+  amber:       '#4B5563',
+  amberDark:   '#374151',
+  amberLight:  '#E5E7EB',
 
-  // Teal — secondary actions
-  teal:        '#0D9488',
-  tealLight:   '#CCFBF1',
+  // Mid gray — secondary actions
+  teal:        '#6B7280',
+  tealLight:   '#F3F4F6',
 
   // Text
-  text:        '#1C1917',
-  textMuted:   '#78716C',
-  textFaint:   '#A8A29E',
+  text:        '#111827',
+  textMuted:   '#6B7280',
+  textFaint:   '#9CA3AF',
 
   // Borders
-  border:      '#E7E5E4',
-  borderMid:   '#D6D3D1',
+  border:      '#E5E7EB',
+  borderMid:   '#D1D5DB',
 
   // Status
   error:       '#DC2626',
@@ -42,7 +42,7 @@ export const Radii = {
 export const Shadows = {
   card: Platform.select({
     ios: {
-      shadowColor: '#1C1917',
+      shadowColor: '#111827',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.06,
       shadowRadius: 8,
@@ -51,7 +51,7 @@ export const Shadows = {
   }),
   float: Platform.select({
     ios: {
-      shadowColor: '#1C1917',
+      shadowColor: '#111827',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.10,
       shadowRadius: 16,
