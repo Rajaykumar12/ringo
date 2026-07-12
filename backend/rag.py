@@ -9,6 +9,22 @@ from vectorstore import LangChainRAG
 # Singleton instance
 rag_system = None
 
+# Groq's free tier caps requests at 12000 tokens/minute (~4 chars/token); keep
+# retrieved context well under that so prompt + history + response still fit.
+MAX_CONTEXT_CHARS = 24000
+
+
+def _build_context(chunks: list) -> str:
+    """Join formatted chunks up to MAX_CONTEXT_CHARS, stopping at whole-chunk boundaries."""
+    parts = []
+    total = 0
+    for text in chunks:
+        if total + len(text) > MAX_CONTEXT_CHARS and parts:
+            break
+        parts.append(text)
+        total += len(text)
+    return "\n\n".join(parts)
+
 _STRUCTURAL_KW = frozenset([
     "section", "chapter", "topic", "overview", "outline", "contents",
     "table of contents", "index", "structure", "what is in", "what are",
@@ -107,7 +123,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
 
         # Collect unique source filenames
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
-        context = "\n\n".join(_format_chunk(d) for d in docs) if docs else "No relevant context found."
+        context = _build_context([_format_chunk(d) for d in docs]) if docs else "No relevant context found."
 
         # Invoke chain with Redis-backed conversation history
         response = rag_system.rag_chain_with_history.invoke(

@@ -112,7 +112,7 @@ class LangChainRAG:
                 for t, m in zip(result["documents"], result["metadatas"])
                 if t and t.strip()
             ]
-            self.bm25_retriever = BM25Retriever.from_documents(docs, k=10)
+            self.bm25_retriever = BM25Retriever.from_documents(docs, k=50)
             print(f"BM25 index built ({len(docs)} chunks)")
 
             self._build_rag_chain()
@@ -452,7 +452,7 @@ Context:
             print(f"ChromaDB vector store created and persisted to '{CHROMA_PERSIST_DIR}'")
 
             # Build BM25 from the same chunks
-            self.bm25_retriever = BM25Retriever.from_documents(all_chunks, k=10)
+            self.bm25_retriever = BM25Retriever.from_documents(all_chunks, k=50)
             print(f"BM25 index built ({len(all_chunks)} chunks)")
 
             self._build_rag_chain()
@@ -470,7 +470,7 @@ Context:
         if not self.vectorstore:
             return None
 
-        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 10})
+        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 50})
 
         if self.bm25_retriever:
             return EnsembleRetriever(

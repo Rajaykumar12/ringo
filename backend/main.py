@@ -35,6 +35,7 @@ MAX_SESSION_ID_LENGTH = 128
 ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
 pipeline = None
+_refresh_lock = asyncio.Lock()
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -161,7 +162,7 @@ async def text_chat(
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
-    from rag import rag_system, initialize_rag
+    from rag import rag_system, initialize_rag, _build_context
 
     if len(message) > MAX_MESSAGE_LENGTH:
         raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_MESSAGE_LENGTH} characters)")
@@ -170,7 +171,7 @@ async def text_chat(
     if stream:
         async def stream_response():
             if not rag_system:
-                initialize_rag()
+                await asyncio.to_thread(initialize_rag)
 
             lang = QueryRefiner().detect_language(message) if not language else language
             lang_map = {"en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu"}
@@ -184,9 +185,9 @@ async def text_chat(
                 return
 
             retriever = rag_system.get_retriever()
-            docs = retriever.invoke(message)
+            docs = await asyncio.to_thread(retriever.invoke, message)
             sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
-            context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
+            context = _build_context([d.page_content for d in docs]) if docs else "No relevant context found."
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
 
@@ -216,7 +217,7 @@ async def text_chat(
     # Non-streaming
     try:
         start = time.time()
-        result = pipeline.process_text(message, language, session_id=session_id)
+        result = await asyncio.to_thread(pipeline.process_text, message, language, session_id=session_id)
         latency_ms = int((time.time() - start) * 1000)
         context = result.pop("context", "")
         log_id, partition_key = log_rag_call(
@@ -338,7 +339,8 @@ async def generate_tts(
 @limiter.limit("5/minute")
 async def refresh_docs(request: Request):
     try:
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "message": "Documents refreshed successfully"})
     except HTTPException:
         raise
@@ -388,7 +390,8 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
 
     try:
         upload_document(file.filename, data)
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "filename": file.filename, "message": f"'{file.filename}' uploaded and indexed successfully"})
     except HTTPException:
         raise
@@ -404,7 +407,8 @@ async def delete_doc(filename: str):
         raise HTTPException(status_code=400, detail="Invalid filename")
     try:
         delete_document(filename)
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "message": f"'{filename}' deleted and index rebuilt"})
     except HTTPException:
         raise
