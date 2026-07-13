@@ -15,6 +15,10 @@ RUN rm -rf /app/documents && mkdir -p /app/documents
 # Ensure chroma_db directory exists for volume mount
 RUN mkdir -p /app/chroma_db
 
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
 EXPOSE 8000
 
 CMD ["python", "main.py"]
