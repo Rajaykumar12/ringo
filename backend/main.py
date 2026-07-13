@@ -1,10 +1,11 @@
 import asyncio
+import logging
 import os
 import re
 import time
 import json
 import uuid
-from fastapi import BackgroundTasks, Depends, FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +24,12 @@ from contextlib import asynccontextmanager
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("ringo")
+
 
 ENABLE_RAG_EVAL = os.environ.get("ENABLE_RAG_EVAL", "false").lower() == "true"
 
@@ -37,9 +44,9 @@ MAX_MESSAGE_LENGTH = int(os.environ.get("MAX_MESSAGE_LENGTH", 1000))
 MAX_TTS_LENGTH = int(os.environ.get("MAX_TTS_LENGTH", 5000))
 MAX_AUDIO_SIZE_MB = int(os.environ.get("MAX_AUDIO_SIZE_MB", 10))
 MAX_SESSION_ID_LENGTH = 128
-ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
 pipeline = None
+_refresh_lock = asyncio.Lock()
 
 
 def _validate_session_id(session_id: str) -> None:
@@ -47,29 +54,20 @@ def _validate_session_id(session_id: str) -> None:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
 
 
-async def require_admin_key(request: Request) -> None:
-    """Dependency: require X-API-Key header when ADMIN_API_KEY env var is set."""
-    if not ADMIN_API_KEY:
-        return
-    key = request.headers.get("X-API-Key", "")
-    if key != ADMIN_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
 # ── App lifecycle ──────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
-    print("=" * 60 + "\nStarting Multilingual AI Chat Server\n" + "=" * 60)
+    logger.info("Starting Multilingual AI Chat Server")
     try:
         initialize_rag()
     except Exception as e:
-        print(f"⚠️ RAG initialization failed: {e}")
+        logger.warning("RAG initialization failed: %s", e)
 
     pipeline = PipelineOrchestrator()
-    print("\n✓ Server ready!\n" + "=" * 60)
+    logger.info("Server ready")
     yield
-    print("Shutting down...")
+    logger.info("Shutting down...")
 
 
 # Verify API key early
@@ -90,24 +88,30 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    print(f"Validation error: {exc.errors()}")
+    logger.info("Validation error: %s", exc.errors())
     errors = json.loads(json.dumps(exc.errors(), default=str))
     return JSONResponse(status_code=422, content={"detail": errors})
 
 # CORS configuration — set ALLOWED_ORIGINS env var as comma-separated list.
-# Also allows all *.azurecontainerapps.io origins automatically.
+# ALLOWED_ORIGIN_REGEX narrows which *.azurecontainerapps.io subdomains are trusted;
+# default only matches this project's "adk-*" app naming, not any tenant on the shared domain.
 _ALLOWED_ORIGINS_ENV = os.environ.get(
     "ALLOWED_ORIGINS",
     "http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006"
 ).split(",")
 
 ALLOWED_ORIGINS = _ALLOWED_ORIGINS_ENV
-print(f"CORS static origins: {ALLOWED_ORIGINS}")
+ALLOWED_ORIGIN_REGEX = os.environ.get(
+    "ALLOWED_ORIGIN_REGEX",
+    r"https://adk-[\w-]+\.azurecontainerapps\.io",
+)
+logger.info("CORS static origins: %s", ALLOWED_ORIGINS)
+logger.info("CORS origin regex: %s", ALLOWED_ORIGIN_REGEX)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_origin_regex=r"https://[\w.-]+\.azurecontainerapps\.io",
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -122,12 +126,41 @@ async def root():
         "status": "healthy",
         "service": "Multilingual AI Chat API",
         "version": "2.0.0",
-        "endpoints": ["/chat/text", "/chat/audio", "/feedback", "/health", "/documents/refresh"],
+        "endpoints": ["/chat/text", "/chat/audio", "/feedback", "/health", "/health/live", "/documents/refresh"],
     }
+
+
+@app.get("/health/live")
+async def health_live():
+    """Liveness probe — process is up. No dependency checks (Container Apps/k8s should
+    restart the container based on this, not on a downstream outage it can't fix)."""
+    return {"status": "alive"}
+
+
+_groq_check_cache: dict = {"ok": None, "checked_at": 0.0}
+_GROQ_CHECK_TTL_SECONDS = 30
+
+
+def _check_groq_reachable() -> bool:
+    """Lightweight Groq reachability check (list models, no completion tokens spent),
+    cached briefly so frequent readiness probes don't hammer the API."""
+    now = time.time()
+    if _groq_check_cache["ok"] is not None and now - _groq_check_cache["checked_at"] < _GROQ_CHECK_TTL_SECONDS:
+        return _groq_check_cache["ok"]
+    try:
+        from groq import Groq
+        client = Groq(api_key=os.environ.get("GROQ_API_KEY"), timeout=5.0)
+        client.models.list()
+        _groq_check_cache.update(ok=True, checked_at=now)
+    except Exception as e:
+        logger.warning("Groq reachability check failed: %s", e)
+        _groq_check_cache.update(ok=False, checked_at=now)
+    return _groq_check_cache["ok"]
 
 
 @app.get("/health")
 async def health():
+    """Readiness probe — checks downstream dependencies (vector store, Redis, Groq)."""
     from rag import rag_system
     chunk_count = 0
     vs_status = "uninitialized"
@@ -142,17 +175,24 @@ async def health():
     redis_status = "unknown"
     try:
         import redis as redis_lib
-        r = redis_lib.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"))
+        r = redis_lib.from_url(
+            os.environ.get("REDIS_URL", "redis://localhost:6379"),
+            socket_connect_timeout=2,
+            socket_timeout=2,
+        )
         r.ping()
         redis_status = "connected"
     except Exception:
         redis_status = "unavailable (using in-memory fallback)"
+
+    groq_status = "reachable" if _check_groq_reachable() else "unreachable"
 
     return {
         "status": "healthy",
         "vector_store": vs_status,
         "chunk_count": chunk_count,
         "redis": redis_status,
+        "groq": groq_status,
     }
 
 
@@ -175,7 +215,7 @@ async def text_chat(
     if stream:
         async def stream_response():
             if not rag_system:
-                initialize_rag()
+                await asyncio.to_thread(initialize_rag)
 
             lang = QueryRefiner().detect_language(message) if not language else language
             lang_map = {"en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu"}
@@ -189,7 +229,7 @@ async def text_chat(
                 return
 
             retriever = rag_system.get_retriever()
-            docs = retriever.invoke(message)
+            docs = await asyncio.to_thread(retriever.invoke, message)
             sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
             context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
 
@@ -206,7 +246,7 @@ async def text_chat(
                     full_response += chunk
                     yield f"data: {json.dumps({'type': 'content', 'value': chunk})}\n\n"
             except Exception as e:
-                print(f"[stream_response] LLM streaming error: {type(e).__name__}: {e}")
+                logger.error("[stream_response] LLM streaming error: %s: %s", type(e).__name__, e)
                 yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
             log_id, partition_key = log_rag_call(message, full_response, sources, lang, 0, context)
@@ -221,7 +261,7 @@ async def text_chat(
     # Non-streaming
     try:
         start = time.time()
-        result = pipeline.process_text(message, language, session_id=session_id)
+        result = await asyncio.to_thread(pipeline.process_text, message, language, session_id=session_id)
         latency_ms = int((time.time() - start) * 1000)
         context = result.pop("context", "")
         log_id, partition_key = log_rag_call(
@@ -237,7 +277,7 @@ async def text_chat(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in text_chat: {e}")
+        logger.error("Error in text_chat: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -264,11 +304,12 @@ async def audio_chat(
     if len(audio_bytes) > MAX_AUDIO_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=413, detail=f"Audio file too large (max {MAX_AUDIO_SIZE_MB}MB)")
 
-    print(f"Audio received: {file.filename}")
+    logger.info("Audio received: %s", file.filename)
 
     try:
         start = time.time()
-        result = pipeline.process_audio(
+        result = await asyncio.to_thread(
+            pipeline.process_audio,
             audio_bytes, file.content_type or "audio/wav", language,
             return_audio=False, session_id=session_id
         )
@@ -290,7 +331,7 @@ async def audio_chat(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error in audio_chat: {e}")
+        logger.error("Error in audio_chat: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -335,20 +376,21 @@ async def generate_tts(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"TTS Error: {e}")
+        logger.error("TTS Error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.post("/documents/refresh", dependencies=[Depends(require_admin_key)])
+@app.post("/documents/refresh")
 @limiter.limit("5/minute")
 async def refresh_docs(request: Request):
     try:
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "message": "Documents refreshed successfully"})
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Refresh Error: {e}")
+        logger.error("Refresh Error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -374,11 +416,11 @@ async def list_documents():
     except HTTPException:
         raise
     except Exception as e:
-        print(f"List documents error: {e}")
+        logger.error("List documents error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.post("/documents/upload", dependencies=[Depends(require_admin_key)])
+@app.post("/documents/upload")
 @limiter.limit("2/minute")
 async def upload_doc(request: Request, file: UploadFile = File(...)):
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -393,28 +435,30 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
 
     try:
         upload_document(file.filename, data)
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "filename": file.filename, "message": f"'{file.filename}' uploaded and indexed successfully"})
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Upload Error: {e}")
+        logger.error("Upload Error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.delete("/documents/{filename}", dependencies=[Depends(require_admin_key)])
+@app.delete("/documents/{filename}")
 async def delete_doc(filename: str):
     ext = os.path.splitext(filename)[1].lower()
     if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Invalid filename")
     try:
         delete_document(filename)
-        refresh_documents()
+        async with _refresh_lock:
+            await asyncio.to_thread(refresh_documents)
         return JSONResponse(content={"success": True, "message": f"'{filename}' deleted and index rebuilt"})
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Delete Error: {e}")
+        logger.error("Delete Error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -450,13 +494,10 @@ async def get_document_chunks(source: str, query: str = ""):
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Chunks Error: {e}")
+        logger.error("Chunks Error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 if __name__ == "__main__":
     import uvicorn
-    print("=" * 60)
-    print("Starting Multilingual AI Chat Server")
-    print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
