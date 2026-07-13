@@ -8,7 +8,7 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Radii, Shadows } from '@/constants/theme';
+import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
 export type Language = 'en' | 'hi' | 'ta' | 'te' | 'auto';
 
@@ -17,7 +17,7 @@ interface LanguageSelectorProps {
   onSelectLanguage: (language: Language) => void;
 }
 
-const LANGUAGES: { code: Language; name: string; nativeName: string; flag: string }[] = [
+export const LANGUAGES: { code: Language; name: string; nativeName: string; flag: string }[] = [
   { code: 'auto', name: 'Auto-Detect', nativeName: 'Auto',   flag: '🌐' },
   { code: 'en',   name: 'English',     nativeName: 'English', flag: '🇬🇧' },
   { code: 'hi',   name: 'Hindi',       nativeName: 'हिंदी',   flag: '🇮🇳' },
@@ -26,6 +26,8 @@ const LANGUAGES: { code: Language; name: string; nativeName: string; flag: strin
 ];
 
 export function LanguageSelector({ selectedLanguage, onSelectLanguage }: LanguageSelectorProps) {
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const [visible, setVisible] = React.useState(false);
   const current = LANGUAGES.find((l) => l.code === selectedLanguage);
 
@@ -74,7 +76,7 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   button: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Radii, Shadows } from '@/constants/theme';
+import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
 interface ChatInputProps {
   onSendText: (message: string) => void;
@@ -31,6 +31,8 @@ function ActionButton({
   children: React.ReactNode;
   disabled?: boolean;
 }) {
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const scale = useSharedValue(1);
   const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
 
@@ -49,6 +51,8 @@ function ActionButton({
 }
 
 export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: ChatInputProps) {
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const [message, setMessage] = useState('');
   const [focused, setFocused] = useState(false);
 
@@ -103,7 +107,7 @@ export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: C
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: {
     flexDirection: 'row',
     paddingHorizontal: 14,

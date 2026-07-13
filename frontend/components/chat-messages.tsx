@@ -11,7 +11,7 @@ import {
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Message } from '@/services/api';
-import { Colors, Radii, Shadows } from '@/constants/theme';
+import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -55,6 +55,8 @@ export function ChatMessages({
   isPlaying,
   isGeneratingTTS,
 }: ChatMessagesProps) {
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
   React.useEffect(() => {
@@ -140,7 +142,7 @@ export function ChatMessages({
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   content: { padding: 16, paddingBottom: 4, gap: 4 },
 
