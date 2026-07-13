@@ -3,9 +3,12 @@ eval.py — LLM-as-judge scoring for RAG responses.
 Scores faithfulness, answer relevance, and context relevance using Groq.
 All functions return None on failure — never raise.
 """
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger("ringo.eval")
 
 
 def _score(prompt: str) -> float | None:
@@ -24,7 +27,7 @@ def _score(prompt: str) -> float | None:
         if match:
             return float(match.group())
     except Exception as e:
-        print(f"Eval scoring failed: {e}")
+        logger.warning(f"Eval scoring failed: {e}")
     return None
 
 

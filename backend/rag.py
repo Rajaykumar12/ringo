@@ -2,9 +2,12 @@
 rag.py — Public API for the RAG system.
 Initializes the singleton instance and provides interface methods.
 """
+import logging
 from typing import Dict, Any
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
+
+logger = logging.getLogger("ringo.rag")
 
 # Singleton instance
 rag_system = None
@@ -47,9 +50,9 @@ def refresh_documents():
     """Refresh documents from blob storage and rebuild the vector store."""
     global rag_system
     if rag_system:
-        print("Refreshing documents from blob storage...")
+        logger.info("Refreshing documents from blob storage...")
         rag_system.create_vectorstore(rag_system.load_documents())
-        print("Documents refreshed successfully")
+        logger.info("Documents refreshed successfully")
 
 
 def get_rag_response(query: str, language: str = "en", session_id: str = "default") -> Dict[str, Any]:
@@ -103,7 +106,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
                 ]
                 docs = struct_docs + docs
             except Exception as e:
-                print(f"Structure injection failed (non-fatal): {e}")
+                logger.warning("Structure injection failed (non-fatal): %s", e)
 
         # Collect unique source filenames
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
@@ -118,5 +121,5 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
         return {"response": response, "sources": sources, "context": context}
 
     except Exception as e:
-        print(f"RAG Error: {e}")
+        logger.error("RAG Error: %s", e)
         return {"response": "Error processing request.", "sources": [], "context": ""}

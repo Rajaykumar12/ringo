@@ -3,9 +3,12 @@ rag_logger.py — Azure Table Storage logging for RAG calls.
 Logs each query, response, sources, context, language, and latency to the 'raglogs' table.
 Falls back silently if AZURE_STORAGE_CONNECTION_STRING is not configured.
 """
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger("ringo.rag_logger")
 
 
 def log_rag_call(
@@ -42,7 +45,7 @@ def log_rag_call(
         }
         table.upsert_entity(entity)
     except Exception as e:
-        print(f"Table Storage logging failed: {e}")
+        logger.warning(f"Table Storage logging failed: {e}")
 
     return log_id, partition_key
 
@@ -64,7 +67,7 @@ def update_eval_scores(log_id: str, partition_key: str, scores: dict):
                 entity[key] = val
         table.update_entity(entity, mode=UpdateMode.MERGE)
     except Exception as e:
-        print(f"Eval score update failed: {e}")
+        logger.warning(f"Eval score update failed: {e}")
 
 
 def log_feedback(log_id: str, partition_key: str, rating: int):
@@ -85,4 +88,4 @@ def log_feedback(log_id: str, partition_key: str, rating: int):
         }
         table.update_entity(entity, mode=UpdateMode.MERGE)
     except Exception as e:
-        print(f"Feedback logging failed: {e}")
+        logger.warning(f"Feedback logging failed: {e}")

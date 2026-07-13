@@ -2,10 +2,13 @@
 memory.py — Conversation session memory.
 Uses Redis (with 1-hour TTL) when available; falls back to in-memory LRU store.
 """
+import logging
 import os
 from collections import OrderedDict
 from typing import Optional
 from langchain_core.chat_history import InMemoryChatMessageHistory
+
+logger = logging.getLogger("ringo.memory")
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 
@@ -27,10 +30,10 @@ def _probe_redis() -> bool:
         h = RedisChatMessageHistory(session_id="__probe__", url=REDIS_URL)
         _ = h.messages
         _redis_ok = True
-        print(f"Redis connected at {REDIS_URL}")
+        logger.info("Redis connected at %s", REDIS_URL)
     except Exception as e:
         _redis_ok = False
-        print(f"Redis unavailable ({e}) — using in-memory session store")
+        logger.warning("Redis unavailable (%s) — using in-memory session store", e)
     return _redis_ok
 
 

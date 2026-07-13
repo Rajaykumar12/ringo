@@ -1,9 +1,12 @@
 from typing import Optional, Dict, Any
+import logging
 import os
 from dotenv import load_dotenv
 from rag import get_rag_response
 
 load_dotenv()
+
+logger = logging.getLogger("ringo.pipeline")
 
 
 class TranscriptionError(Exception):
@@ -28,9 +31,9 @@ class AudioInputProcessor:
     # Stage 1b: Audio transcription with Whisper
     def __init__(self):
         import whisper
-        print("Loading Whisper model...")
+        logger.info("Loading Whisper model...")
         self.model = whisper.load_model("base")
-        print("✓ Whisper model loaded")
+        logger.info("Whisper model loaded")
     
     def process(self, audio_bytes: bytes, mime_type: str = "audio/wav") -> Dict[str, Any]:
         if not audio_bytes: raise ValueError("Empty audio input")
@@ -154,15 +157,15 @@ class ResponseGenerator:
                     audio_bytes = audio_file.read()
                     audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                 
-                print(f"✓ Edge-TTS generated for language: {language} (voice: {voice})")
+                logger.info("Edge-TTS generated for language: %s (voice: %s)", language, voice)
                 return audio_base64
             finally:
                 # Clean up temp file
                 if os.path.exists(temp_audio_path):
                     os.remove(temp_audio_path)
-                    
+
         except Exception as e:
-            print(f"⚠️ Edge-TTS generation failed: {e}")
+            logger.warning("Edge-TTS generation failed: %s", e)
             return None
 
 class PipelineOrchestrator:
