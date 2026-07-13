@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,9 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors, Radii, Shadows } from '@/constants/theme';
+import { useRouter } from 'expo-router';
+import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { useAppSettings } from '@/hooks/use-app-settings';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
@@ -21,14 +23,28 @@ import { DocumentsPanel } from '@/components/documents-panel';
 import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
+  const router = useRouter();
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { defaultLanguage, streamingEnabled, loaded: settingsLoaded } = useAppSettings();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
-  const useStreaming = true;
-  // Session ID — generated once per app session for conversation memory
-  const [sessionId] = useState(() => `session_${Date.now()}`);
+  const useStreaming = streamingEnabled;
+
+  // Apply the persisted default language once settings finish loading, without
+  // overriding a manual in-session selection made before that (dependency is
+  // intentionally just `settingsLoaded`, not `defaultLanguage`).
+  useEffect(() => {
+    if (settingsLoaded) setSelectedLanguage(defaultLanguage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsLoaded]);
+
+  // Session ID — generated once per app session for conversation memory.
+  // Includes a random component (not just a timestamp) so it can't be guessed/collided by another client.
+  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2)}`);
 
   const [showDocuments, setShowDocuments] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -256,6 +272,9 @@ export default function ChatScreen() {
     }
   };
 
+  const recordingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const MAX_RECORDING_MS = 120000; // 2 minutes
+
   const startRecording = async () => {
     try {
       const { granted } = await Audio.requestPermissionsAsync();
@@ -274,6 +293,11 @@ export default function ChatScreen() {
       );
       setRecording(newRecording);
       setIsRecording(true);
+
+      recordingTimeoutRef.current = setTimeout(() => {
+        Alert.alert('Recording Limit Reached', 'Maximum recording length is 2 minutes.');
+        stopRecordingAndSend();
+      }, MAX_RECORDING_MS);
     } catch (error) {
       console.error('Failed to start recording:', error);
       Alert.alert('Error', 'Failed to start recording');
@@ -282,6 +306,11 @@ export default function ChatScreen() {
 
   const stopRecordingAndSend = async () => {
     if (!recording) return;
+
+    if (recordingTimeoutRef.current) {
+      clearTimeout(recordingTimeoutRef.current);
+      recordingTimeoutRef.current = null;
+    }
 
     try {
       setIsRecording(false);
@@ -369,6 +398,13 @@ export default function ChatScreen() {
 
         <View style={styles.headerControls}>
           <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
+          <TouchableOpacity
+            onPress={() => router.push('/settings')}
+            style={styles.iconBtn}
+            accessibilityLabel="Settings"
+          >
+            <Ionicons name="settings-outline" size={18} color={Colors.amber} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -397,7 +433,7 @@ export default function ChatScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.bg,

@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { listDocuments, uploadDocument, deleteDocument, DocumentInfo } from '@/services/api';
-import { Colors, Radii, Shadows } from '@/constants/theme';
+import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
 interface DocumentsPanelProps {
   visible: boolean;
@@ -28,13 +28,28 @@ const SUPPORTED_MIME_TYPES = [
   'text/plain',
 ];
 
-const TYPE_ICON: Record<string, { name: string; color: string; bg: string }> = {
+const createTypeIcon = (Colors: ReturnType<typeof useThemeColors>): Record<string, { name: string; color: string; bg: string }> => ({
   pdf:      { name: 'document-text', color: Colors.amber,     bg: Colors.amberLight },
   pptx:     { name: 'easel',         color: Colors.teal,      bg: Colors.tealLight },
   markdown: { name: 'code-slash',    color: Colors.textMuted, bg: Colors.surfaceWarm },
-};
+});
+
+const MAX_DOCUMENT_SIZE_MB = 20;
+
+// Only surface the backend's `detail` for 4xx responses — those are deliberate,
+// user-facing validation messages (bad file type/size). Anything else (5xx, network
+// errors) could contain internal details, so fall back to a generic message.
+function getErrorMessage(e: any, fallback: string): string {
+  const status = e?.response?.status;
+  const detail = e?.response?.data?.detail;
+  if (status >= 400 && status < 500 && typeof detail === 'string') return detail;
+  return fallback;
+}
 
 export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
+  const Colors = useThemeColors();
+  const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const TYPE_ICON = React.useMemo(() => createTypeIcon(Colors), [Colors]);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -65,12 +80,16 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       if (result.canceled || !result.assets?.length) return;
 
       const asset = result.assets[0];
+      if (asset.size && asset.size > MAX_DOCUMENT_SIZE_MB * 1024 * 1024) {
+        Alert.alert('File Too Large', `"${asset.name}" exceeds the ${MAX_DOCUMENT_SIZE_MB}MB limit.`);
+        return;
+      }
       setUploading(true);
       setUploadProgress(0);
       await uploadDocument(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream', setUploadProgress);
       await fetchDocuments();
     } catch (e: any) {
-      Alert.alert('Upload Failed', e?.response?.data?.detail ?? e?.message ?? 'Unknown error');
+      Alert.alert('Upload Failed', getErrorMessage(e, 'Something went wrong. Please try again.'));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -91,7 +110,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       await deleteDocument(filename);
       await fetchDocuments();
     } catch (e: any) {
-      const msg = e?.response?.data?.detail ?? 'Delete failed';
+      const msg = getErrorMessage(e, 'Delete failed. Please try again.');
       Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Error', msg);
     }
   };
@@ -200,7 +219,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection: 'row',

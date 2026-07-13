@@ -5,16 +5,16 @@ import 'react-native-reanimated';
 import React, { Component, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors, Radii } from '@/constants/theme';
+import { Radii, useThemeColors } from '@/constants/theme';
+import { SettingsProvider, useAppSettings } from '@/hooks/use-app-settings';
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryState> {
-  constructor(props: { children: ReactNode }) {
+class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<typeof useThemeColors> }, ErrorBoundaryState> {
+  constructor(props: { children: ReactNode; colors: ReturnType<typeof useThemeColors> }) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -29,13 +29,14 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 
   render() {
     if (this.state.hasError) {
+      const styles = createStyles(this.props.colors);
       return (
         <View style={styles.container}>
           <View style={styles.iconWrap}>
             <Text style={styles.icon}>⚠️</Text>
           </View>
           <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>{this.state.error?.message ?? 'An unexpected error occurred.'}</Text>
+          <Text style={styles.message}>An unexpected error occurred. Please try again.</Text>
           <TouchableOpacity
             style={styles.button}
             onPress={() => this.setState({ hasError: false, error: null })}
@@ -51,21 +52,31 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  return (
+    <SettingsProvider>
+      <RootLayoutInner />
+    </SettingsProvider>
+  );
+}
+
+function RootLayoutInner() {
+  const { effectiveScheme } = useAppSettings();
+  const colors = useThemeColors();
 
   return (
-    <ErrorBoundary>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ErrorBoundary colors={colors}>
+      <ThemeProvider value={effectiveScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         </Stack>
-        <StatusBar style="dark" backgroundColor={Colors.bg} />
+        <StatusBar style={effectiveScheme === 'dark' ? 'light' : 'dark'} backgroundColor={colors.bg} />
       </ThemeProvider>
     </ErrorBoundary>
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, backgroundColor: Colors.bg },
   iconWrap: {
     width: 72,
