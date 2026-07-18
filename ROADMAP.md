@@ -78,7 +78,7 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 5 | PWA manifest/service worker | Low | Low | Frontend | **Done** |
 | 6 | Basic pytest suite + CI test gate | High | Med | Backend | **Done** |
 | 7 | Blocking-call offload to threads (retry carefully — see reverted attempt) | High | Low-Med | Backend | **Done** |
-| 8 | Incremental vector-store indexing (stop full rebuilds) | High | Med | Backend | Pending |
+| 8 | Incremental vector-store indexing (stop full rebuilds) | High | Med | Backend | **Done** |
 | 9 | Message actions (copy/edit/regenerate/stop) | Med | Low-Med | Frontend | Pending |
 | 10 | Persisted chat history / multi-conversation threads | High | Med | Frontend | Pending |
 | 11 | Markdown/code-block rendering | Med | Med | Frontend | Pending |
