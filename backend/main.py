@@ -15,7 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rag_system as _rag_ref
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, rag_system as _rag_ref
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
@@ -230,6 +230,7 @@ async def text_chat(
 
             retriever = rag_system.get_retriever()
             docs = await asyncio.to_thread(retriever.invoke, message)
+            docs = await asyncio.to_thread(rerank_documents, message, docs)
             sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
             context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
 

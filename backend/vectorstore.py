@@ -71,10 +71,18 @@ class LangChainRAG:
 
         sync_documents_from_blob(self.documents_folder)
 
-        # Embeddings — local HuggingFace, no API cost
+        # Embeddings — local HuggingFace, no API cost. Wrapped in a disk-backed cache so
+        # re-embedding unchanged chunks (e.g. on a full blob-storage refresh) is a cache
+        # hit instead of a recomputation.
         from langchain_huggingface import HuggingFaceEmbeddings
-        self.embeddings = HuggingFaceEmbeddings(
+        from langchain_classic.embeddings import CacheBackedEmbeddings
+        from langchain_classic.storage import LocalFileStore
+        underlying_embeddings = HuggingFaceEmbeddings(
             model_name="all-MiniLM-L6-v2", model_kwargs={"device": "cpu"}
+        )
+        embedding_cache_store = LocalFileStore("./embedding_cache")
+        self.embeddings = CacheBackedEmbeddings.from_bytes_store(
+            underlying_embeddings, embedding_cache_store, namespace="all-MiniLM-L6-v2", key_encoder="sha256"
         )
 
         # LLM — Groq Llama 3.3 70B

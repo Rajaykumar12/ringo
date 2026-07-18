@@ -3,14 +3,45 @@ rag.py — Public API for the RAG system.
 Initializes the singleton instance and provides interface methods.
 """
 import logging
-from typing import Dict, Any
+import os
+from typing import Dict, Any, List
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
+from response_cache import make_cache_key, get_cached_response, set_cached_response
 
 logger = logging.getLogger("ringo.rag")
 
 # Singleton instance
 rag_system = None
+
+_cross_encoder = None
+RERANK_MODEL = os.environ.get("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+RERANK_TOP_N = int(os.environ.get("RERANK_TOP_N", "10"))
+
+
+def _get_cross_encoder():
+    global _cross_encoder
+    if _cross_encoder is None:
+        from sentence_transformers import CrossEncoder
+        _cross_encoder = CrossEncoder(RERANK_MODEL)
+        logger.info("Cross-encoder re-ranker loaded: %s", RERANK_MODEL)
+    return _cross_encoder
+
+
+def rerank_documents(query: str, docs: List[Document], top_n: int = RERANK_TOP_N) -> List[Document]:
+    """Cross-encoder re-rank + cutoff so the merged BM25+semantic hit list doesn't
+    balloon the prompt with noisy, low-relevance chunks as the corpus grows."""
+    if len(docs) <= top_n:
+        return docs
+    try:
+        encoder = _get_cross_encoder()
+        pairs = [[query, d.page_content] for d in docs]
+        scores = encoder.predict(pairs)
+        ranked = sorted(zip(docs, scores), key=lambda pair: pair[1], reverse=True)
+        return [d for d, _ in ranked[:top_n]]
+    except Exception as e:
+        logger.warning("Re-ranking failed (%s) — falling back to first %d retrieved chunks", e, top_n)
+        return docs[:top_n]
 
 _STRUCTURAL_KW = frozenset([
     "section", "chapter", "topic", "overview", "outline", "contents",
@@ -111,6 +142,10 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
                 deduped.append(d)
         docs = deduped
 
+        # Cross-encoder re-rank + cutoff — the BM25+semantic ensemble over-retrieves,
+        # so this trims to the most relevant chunks before they hit the prompt
+        docs = rerank_documents(query, docs)
+
         # For structural queries, prepend dedicated structure chunks
         if _is_structural_query(query) and rag_system.vectorstore:
             try:
@@ -131,11 +166,29 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
         context = "\n\n".join(_format_chunk(d) for d in docs) if docs else "No relevant context found."
 
+        # Exact-match response cache — only safe on a session's first turn, since a
+        # cached answer doesn't reflect any prior conversation context.
+        from memory import get_session_history
+        history = get_session_history(session_id)
+        is_first_turn = len(history.messages) == 0
+        cache_key = make_cache_key(query, language, context) if is_first_turn else None
+
+        if cache_key:
+            cached = get_cached_response(cache_key)
+            if cached is not None:
+                logger.info("Response cache hit for first-turn query")
+                history.add_user_message(query)
+                history.add_ai_message(cached)
+                return {"response": cached, "sources": sources, "context": context}
+
         # Invoke chain with Redis-backed conversation history
         response = rag_system.rag_chain_with_history.invoke(
             {"context": context, "question": query, "language": language_name},
             config={"configurable": {"session_id": session_id}},
         )
+
+        if cache_key:
+            set_cached_response(cache_key, response)
 
         return {"response": response, "sources": sources, "context": context}
 

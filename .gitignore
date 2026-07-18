@@ -21,6 +21,10 @@ backend/chroma_db/
 *.db
 *.sqlite
 
+# Embedding cache
+embedding_cache/
+backend/embedding_cache/
+
 # Claude Code
 CLAUDE.md
 
