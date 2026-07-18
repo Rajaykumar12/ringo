@@ -79,11 +79,11 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 6 | Basic pytest suite + CI test gate | High | Med | Backend | **Done** |
 | 7 | Blocking-call offload to threads (retry carefully — see reverted attempt) | High | Low-Med | Backend | **Done** |
 | 8 | Incremental vector-store indexing (stop full rebuilds) | High | Med | Backend | **Done** |
-| 9 | Message actions (copy/edit/regenerate/stop) | Med | Low-Med | Frontend | Pending |
-| 10 | Persisted chat history / multi-conversation threads | High | Med | Frontend | Pending |
-| 11 | Markdown/code-block rendering | Med | Med | Frontend | Pending |
-| 12 | Cross-encoder re-ranking | Med | Med | Backend | Pending |
-| 13 | Embedding/response caching | Med | Med | Backend | Pending |
+| 9 | Message actions (copy/edit/regenerate/stop) | Med | Low-Med | Frontend | **Done** |
+| 10 | Persisted chat history / multi-conversation threads | High | Med | Frontend | **Done** |
+| 11 | Markdown/code-block rendering | Med | Med | Frontend | **Done** |
+| 12 | Cross-encoder re-ranking | Med | Med | Backend | **Done** |
+| 13 | Embedding/response caching | Med | Med | Backend | **Done** |
 | 14 | Multimodal image input | Med | Med | Frontend | Pending |
 | 15 | Admin/analytics dashboard for existing RAG logs | Med | Med | Full-stack | Pending |
 | 16 | Offline resilience / retry-on-reconnect | Low-Med | Med | Frontend | Pending |
