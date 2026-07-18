@@ -14,12 +14,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 import { useAppSettings } from '@/hooks/use-app-settings';
+import { useConversations } from '@/hooks/use-conversations';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
 import { DocumentsPanel } from '@/components/documents-panel';
+import { ConversationsPanel } from '@/components/conversations-panel';
 import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
@@ -27,6 +29,9 @@ export default function ChatScreen() {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const { defaultLanguage, streamingEnabled, loaded: settingsLoaded } = useAppSettings();
+  const {
+    activeId, activeConversation, loaded: conversationsLoaded, updateActiveMessages,
+  } = useConversations();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -42,13 +47,28 @@ export default function ChatScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded]);
 
-  // Session ID — generated once per app session for conversation memory.
-  // Includes a random component (not just a timestamp) so it can't be guessed/collided by another client.
-  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+  // Session ID ties requests to the active conversation's backend-side memory.
+  const sessionId = activeConversation?.sessionId ?? 'default';
 
   const [showDocuments, setShowDocuments] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initStatus, setInitStatus] = useState('System initializing...');
+  const [editingText, setEditingText] = useState('');
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Load the active conversation's messages whenever the user switches chats.
+  useEffect(() => {
+    if (activeConversation) setMessages(activeConversation.messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
+
+  // Persist messages back to the active conversation as the chat progresses.
+  useEffect(() => {
+    if (!conversationsLoaded || !activeId) return;
+    updateActiveMessages(messages);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages]);
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -170,17 +190,21 @@ export default function ChatScreen() {
     }
   };
 
-  // Handle text message send
-  const handleSendText = async (text: string) => {
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text,
-      sender: 'user',
-      timestamp: new Date(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
+  // Handle text message send. `skipUserMessage` is used by regenerate, which
+  // resends an existing user message's text without appending a new bubble.
+  const handleSendText = async (text: string, options?: { skipUserMessage?: boolean }) => {
+    if (!options?.skipUserMessage) {
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        text,
+        sender: 'user',
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+    }
     setIsLoading(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       if (useStreaming) {
@@ -234,7 +258,8 @@ export default function ChatScreen() {
             }
           },
           selectedLanguage === 'auto' ? undefined : selectedLanguage,
-          sessionId
+          sessionId,
+          controller.signal
         );
       } else {
         // Non-streaming mode
@@ -242,7 +267,8 @@ export default function ChatScreen() {
           text,
           selectedLanguage === 'auto' ? undefined : selectedLanguage,
           false,
-          sessionId
+          sessionId,
+          controller.signal
         );
 
         const aiMessage: Message = {
@@ -255,12 +281,43 @@ export default function ChatScreen() {
         };
         setMessages((prev) => [...prev, aiMessage]);
       }
-    } catch (error) {
-      console.error('Error sending text:', error);
-      Alert.alert('Error', 'Failed to send message. Check your connection and API URL.');
+    } catch (error: any) {
+      const wasStopped = error?.name === 'AbortError' || error?.code === 'ERR_CANCELED';
+      if (!wasStopped) {
+        console.error('Error sending text:', error);
+        Alert.alert('Error', 'Failed to send message. Check your connection and API URL.');
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
+  };
+
+  const handleStopGenerating = () => {
+    abortControllerRef.current?.abort();
+  };
+
+  const handleEditMessage = (message: Message) => {
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.id === message.id);
+      return idx === -1 ? prev : prev.slice(0, idx);
+    });
+    setEditingText(message.text);
+  };
+
+  const handleRegenerate = (aiMessage: Message) => {
+    const idx = messages.findIndex((m) => m.id === aiMessage.id);
+    if (idx === -1) return;
+    let precedingUserText = '';
+    for (let i = idx - 1; i >= 0; i--) {
+      if (messages[i].sender === 'user') {
+        precedingUserText = messages[i].text;
+        break;
+      }
+    }
+    if (!precedingUserText) return;
+    setMessages((prev) => prev.filter((m) => m.id !== aiMessage.id));
+    handleSendText(precedingUserText, { skipUserMessage: true });
   };
 
   // Handle audio recording and sending
@@ -367,7 +424,7 @@ export default function ChatScreen() {
     }
   };
 
-  if (isInitializing) {
+  if (isInitializing || !conversationsLoaded) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.initContainer}>
@@ -384,15 +441,25 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <DocumentsPanel visible={showDocuments} onClose={() => setShowDocuments(false)} />
+      <ConversationsPanel visible={showHistory} onClose={() => setShowHistory(false)} />
 
       <View style={[styles.header, Shadows.card]}>
-        <TouchableOpacity
-          onPress={() => setShowDocuments(true)}
-          style={styles.iconBtn}
-          accessibilityLabel="Manage documents"
-        >
-          <Ionicons name="folder-open-outline" size={18} color={Colors.amber} />
-        </TouchableOpacity>
+        <View style={styles.headerControls}>
+          <TouchableOpacity
+            onPress={() => setShowHistory(true)}
+            style={styles.iconBtn}
+            accessibilityLabel="Chat history"
+          >
+            <Ionicons name="chatbubbles-outline" size={18} color={Colors.amber} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => setShowDocuments(true)}
+            style={styles.iconBtn}
+            accessibilityLabel="Manage documents"
+          >
+            <Ionicons name="folder-open-outline" size={18} color={Colors.amber} />
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.title}>AI Chat</Text>
 
@@ -421,12 +488,18 @@ export default function ChatScreen() {
           playingMessageId={playingMessageId}
           isPlaying={isPlaying}
           isGeneratingTTS={isGeneratingTTS}
+          onEditMessage={handleEditMessage}
+          onRegenerate={handleRegenerate}
+          isLoading={isLoading}
         />
         <ChatInput
           onSendText={handleSendText}
           onSendAudio={handleSendAudio}
+          onStop={handleStopGenerating}
           isRecording={isRecording}
           isLoading={isLoading}
+          editingText={editingText}
+          onEditingTextConsumed={() => setEditingText('')}
         />
       </KeyboardAvoidingView>
     </SafeAreaView>

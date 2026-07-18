@@ -10,6 +10,8 @@ import {
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import Markdown from 'react-native-markdown-display';
 import { Message } from '@/services/api';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
@@ -21,6 +23,9 @@ interface ChatMessagesProps {
   playingMessageId: string | null;
   isPlaying: boolean;
   isGeneratingTTS: boolean;
+  onEditMessage: (message: Message) => void;
+  onRegenerate: (message: Message) => void;
+  isLoading: boolean;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -54,10 +59,15 @@ export function ChatMessages({
   playingMessageId,
   isPlaying,
   isGeneratingTTS,
+  onEditMessage,
+  onRegenerate,
+  isLoading,
 }: ChatMessagesProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const markdownStyles = React.useMemo(() => createMarkdownStyles(Colors), [Colors]);
   const scrollViewRef = React.useRef<ScrollView>(null);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -72,6 +82,14 @@ export function ChatMessages({
     }
   };
 
+  const handleCopy = async (message: Message) => {
+    await Clipboard.setStringAsync(message.text);
+    setCopiedId(message.id);
+    setTimeout(() => setCopiedId((id) => (id === message.id ? null : id)), 1500);
+  };
+
+  const lastAIMessageId = [...messages].reverse().find((m) => m.sender === 'ai')?.id;
+
   const formatTime = (d: Date) =>
     new Date(d).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -84,6 +102,7 @@ export function ChatMessages({
       {messages.map((message) => {
         const isUser = message.sender === 'user';
         const isPlayingThis = playingMessageId === message.id;
+        const isLastAI = !isUser && message.id === lastAIMessageId;
 
         return (
           <View key={message.id} style={[styles.row, isUser ? styles.rowUser : styles.rowAI]}>
@@ -102,9 +121,13 @@ export function ChatMessages({
                   isPlayingThis && styles.bubblePlaying,
                 ]}
               >
-                <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAI]}>
-                  {message.text || (isUser ? '' : '…')}
-                </Text>
+                {isUser || !message.text ? (
+                  <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAI]}>
+                    {message.text || (isUser ? '' : '…')}
+                  </Text>
+                ) : (
+                  <Markdown style={markdownStyles}>{message.text}</Markdown>
+                )}
 
                 {message.isAudio && (
                   <View style={styles.audioLabel}>
@@ -117,6 +140,42 @@ export function ChatMessages({
                   {formatTime(message.timestamp)}
                 </Text>
               </View>
+
+              {!!message.text && (
+                <View style={[styles.actionRow, isUser && styles.actionRowUser]}>
+                  <Pressable
+                    onPress={() => handleCopy(message)}
+                    style={styles.actionIcon}
+                    accessibilityLabel="Copy message"
+                  >
+                    <Ionicons
+                      name={copiedId === message.id ? 'checkmark' : 'copy-outline'}
+                      size={13}
+                      color={Colors.textFaint}
+                    />
+                  </Pressable>
+
+                  {isUser && !isLoading && (
+                    <Pressable
+                      onPress={() => onEditMessage(message)}
+                      style={styles.actionIcon}
+                      accessibilityLabel="Edit and resend message"
+                    >
+                      <Ionicons name="pencil-outline" size={13} color={Colors.textFaint} />
+                    </Pressable>
+                  )}
+
+                  {isLastAI && !isLoading && (
+                    <Pressable
+                      onPress={() => onRegenerate(message)}
+                      style={styles.actionIcon}
+                      accessibilityLabel="Regenerate response"
+                    >
+                      <Ionicons name="refresh-outline" size={13} color={Colors.textFaint} />
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Audio button */}
@@ -141,6 +200,58 @@ export function ChatMessages({
     </ScrollView>
   );
 }
+
+const createMarkdownStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
+  body: { fontSize: 15, lineHeight: 22, color: Colors.text },
+  paragraph: { marginTop: 0, marginBottom: 6 },
+  heading1: { fontSize: 19, fontWeight: '700', color: Colors.text, marginTop: 4, marginBottom: 6 },
+  heading2: { fontSize: 17, fontWeight: '700', color: Colors.text, marginTop: 4, marginBottom: 6 },
+  heading3: { fontSize: 16, fontWeight: '700', color: Colors.text, marginTop: 4, marginBottom: 4 },
+  strong: { fontWeight: '700' },
+  em: { fontStyle: 'italic' },
+  link: { color: Colors.teal, textDecorationLine: 'underline' },
+  bullet_list: { marginBottom: 4 },
+  ordered_list: { marginBottom: 4 },
+  list_item: { flexDirection: 'row', marginBottom: 2 },
+  code_inline: {
+    backgroundColor: Colors.surfaceWarm,
+    color: Colors.text,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontSize: 13,
+    paddingHorizontal: 4,
+    borderRadius: 3,
+  },
+  code_block: {
+    backgroundColor: Colors.surfaceWarm,
+    color: Colors.text,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontSize: 13,
+    borderRadius: Radii.sm,
+    padding: 10,
+    marginVertical: 4,
+  },
+  fence: {
+    backgroundColor: Colors.surfaceWarm,
+    color: Colors.text,
+    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+    fontSize: 13,
+    borderRadius: Radii.sm,
+    padding: 10,
+    marginVertical: 4,
+  },
+  blockquote: {
+    backgroundColor: Colors.surfaceWarm,
+    borderLeftWidth: 3,
+    borderLeftColor: Colors.amber,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginVertical: 4,
+  },
+  table: { borderWidth: 1, borderColor: Colors.border, borderRadius: Radii.sm, marginVertical: 4 },
+  th: { padding: 6, fontWeight: '700', backgroundColor: Colors.surfaceWarm },
+  td: { padding: 6 },
+  hr: { backgroundColor: Colors.border, height: 1, marginVertical: 8 },
+});
 
 const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.bg },
@@ -192,6 +303,10 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
 
   timestamp: { fontSize: 10, color: Colors.textFaint, marginTop: 5, alignSelf: 'flex-end' },
   timestampUser: { color: 'rgba(255,255,255,0.6)' },
+
+  actionRow: { flexDirection: 'row', gap: 4, marginTop: 3, paddingHorizontal: 2 },
+  actionRowUser: { justifyContent: 'flex-end' },
+  actionIcon: { padding: 4 },
 
   audioBtn: {
     width: 34,
