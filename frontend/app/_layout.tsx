@@ -7,6 +7,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 
 import { Radii, useThemeColors } from '@/constants/theme';
 import { SettingsProvider, useAppSettings } from '@/hooks/use-app-settings';
+import { ConversationsProvider } from '@/hooks/use-conversations';
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -54,7 +55,9 @@ class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<
 export default function RootLayout() {
   return (
     <SettingsProvider>
-      <RootLayoutInner />
+      <ConversationsProvider>
+        <RootLayoutInner />
+      </ConversationsProvider>
     </SettingsProvider>
   );
 }
