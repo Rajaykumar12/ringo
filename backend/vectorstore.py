@@ -397,6 +397,114 @@ Instructions:
 
         return structure_docs + documents
 
+    def _chunk_documents(self, documents: List[Document]) -> List[Document]:
+        """Per-type chunking — PPTX and per-page PDFs are already small,
+        so only split markdown and very long PDF pages further."""
+        pdf_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
+        md_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
+
+        all_chunks: List[Document] = []
+        for doc in documents:
+            if doc.metadata.get("chunk_type") == "structure":
+                all_chunks.append(doc)  # Never split structure chunks
+                continue
+            doc_type = doc.metadata.get("type", "")
+            if doc_type == "pptx":
+                all_chunks.append(doc)  # Already 1 doc per slide
+            elif doc_type == "pdf":
+                # Split long pages; short pages kept as-is
+                if len(doc.page_content) > 900:
+                    all_chunks.extend(pdf_splitter.split_documents([doc]))
+                else:
+                    all_chunks.append(doc)
+            elif doc_type == "markdown":
+                all_chunks.extend(md_splitter.split_documents([doc]))
+            else:
+                all_chunks.append(doc)
+
+        return [c for c in all_chunks if c.page_content and c.page_content.strip()]
+
+    def _remove_source_chunks(self, filename: str) -> int:
+        """Delete all indexed chunks belonging to a given source filename. Returns count removed."""
+        if self.vectorstore is None:
+            return 0
+        result = self.vectorstore._collection.get(where={"source": filename}, include=[])
+        ids = result.get("ids", [])
+        if ids:
+            self.vectorstore._collection.delete(ids=ids)
+        return len(ids)
+
+    def _rebuild_bm25_from_store(self):
+        """Rebuild the BM25 index from chunks already in ChromaDB (no re-embedding, no re-parsing)."""
+        result = self.vectorstore._collection.get(include=["documents", "metadatas"])
+        docs = [
+            Document(page_content=t, metadata=m)
+            for t, m in zip(result["documents"], result["metadatas"])
+            if t and t.strip()
+        ]
+        self.bm25_retriever = BM25Retriever.from_documents(docs, k=30) if docs else None
+
+    def add_document(self, filename: str):
+        """Incrementally index a single new/updated document without touching the rest of the corpus."""
+        filepath = os.path.join(self.documents_folder, filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in self.SUPPORTED_EXTENSIONS or not os.path.exists(filepath):
+            logger.warning(f"Cannot incrementally index '{filename}': unsupported type or file missing")
+            return
+
+        if ext == ".pdf":
+            docs = self._load_pdf(filepath, filename)
+            struct = self._extract_pdf_structure(filepath, filename)
+        elif ext == ".pptx":
+            docs = self._load_pptx(filepath, filename)
+            struct = self._extract_pptx_structure(filepath, filename)
+        else:
+            docs = self._load_markdown(filepath, filename)
+            struct = self._extract_markdown_structure(filepath, filename)
+        if struct:
+            docs = [struct] + docs
+
+        chunks = self._chunk_documents(docs)
+        if not chunks:
+            logger.warning(f"No chunks produced for '{filename}' — nothing indexed")
+            return
+
+        if self.vectorstore is None:
+            # No existing index to add to yet — bootstrap from the full corpus once.
+            self.create_vectorstore(self.load_documents())
+            return
+
+        self._remove_source_chunks(filename)  # drop any stale chunks from a prior version
+        self.vectorstore.add_documents(chunks)
+        logger.info(f"Incrementally indexed {len(chunks)} chunks for '{filename}'")
+
+        self._rebuild_bm25_from_store()
+        if not self.rag_chain_with_history:
+            self._build_rag_chain()
+
+    def remove_document(self, filename: str):
+        """Remove a single document's chunks from the index without rebuilding the rest."""
+        if self.vectorstore is None:
+            return
+        removed = self._remove_source_chunks(filename)
+        if removed == 0:
+            logger.info(f"No indexed chunks found for '{filename}'")
+            return
+
+        if self.vectorstore._collection.count() == 0:
+            try:
+                self.vectorstore.delete_collection()
+            except Exception:
+                pass
+            self.vectorstore = None
+            self.bm25_retriever = None
+            self.rag_chain_with_history = None
+            logger.info(f"Removed last document '{filename}' — index now empty")
+            return
+
+        self._rebuild_bm25_from_store()
+        logger.info(f"Removed {removed} chunks for '{filename}'")
+
     def create_vectorstore(self, documents: List[Document]):
         """Index documents into ChromaDB and build BM25 retriever."""
         if not documents:
@@ -412,31 +520,7 @@ Instructions:
             return
 
         try:
-            # Per-type chunking — PPTX and per-page PDFs are already small,
-            # so only split markdown and very long PDF pages further
-            pdf_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
-            md_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
-
-            all_chunks: List[Document] = []
-            for doc in documents:
-                if doc.metadata.get("chunk_type") == "structure":
-                    all_chunks.append(doc)  # Never split structure chunks
-                    continue
-                doc_type = doc.metadata.get("type", "")
-                if doc_type == "pptx":
-                    all_chunks.append(doc)  # Already 1 doc per slide
-                elif doc_type == "pdf":
-                    # Split long pages; short pages kept as-is
-                    if len(doc.page_content) > 900:
-                        all_chunks.extend(pdf_splitter.split_documents([doc]))
-                    else:
-                        all_chunks.append(doc)
-                elif doc_type == "markdown":
-                    all_chunks.extend(md_splitter.split_documents([doc]))
-                else:
-                    all_chunks.append(doc)
-
-            all_chunks = [c for c in all_chunks if c.page_content and c.page_content.strip()]
+            all_chunks = self._chunk_documents(documents)
 
             if not all_chunks:
                 logger.warning("All chunks were empty after filtering")

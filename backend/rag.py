@@ -55,6 +55,25 @@ def refresh_documents():
         logger.info("Documents refreshed successfully")
 
 
+def index_document(filename: str):
+    """Incrementally add/update a single document in the index (no full rebuild)."""
+    global rag_system
+    if not rag_system:
+        initialize_rag()
+        return
+    logger.info("Incrementally indexing '%s'...", filename)
+    rag_system.add_document(filename)
+
+
+def deindex_document(filename: str):
+    """Remove a single document's chunks from the index (no full rebuild)."""
+    global rag_system
+    if not rag_system:
+        return
+    logger.info("Removing '%s' from index...", filename)
+    rag_system.remove_document(filename)
+
+
 def get_rag_response(query: str, language: str = "en", session_id: str = "default") -> Dict[str, Any]:
     """
     Returns dict: {"response": str, "sources": list[str], "context": str}

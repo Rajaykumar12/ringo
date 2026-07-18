@@ -15,7 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, rag_system as _rag_ref
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rag_system as _rag_ref
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
@@ -436,7 +436,7 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
     try:
         upload_document(file.filename, data)
         async with _refresh_lock:
-            await asyncio.to_thread(refresh_documents)
+            await asyncio.to_thread(index_document, file.filename)
         return JSONResponse(content={"success": True, "filename": file.filename, "message": f"'{file.filename}' uploaded and indexed successfully"})
     except HTTPException:
         raise
@@ -453,7 +453,7 @@ async def delete_doc(filename: str):
     try:
         delete_document(filename)
         async with _refresh_lock:
-            await asyncio.to_thread(refresh_documents)
+            await asyncio.to_thread(deindex_document, filename)
         return JSONResponse(content={"success": True, "message": f"'{filename}' deleted and index rebuilt"})
     except HTTPException:
         raise
