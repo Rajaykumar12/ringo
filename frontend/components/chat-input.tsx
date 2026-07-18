@@ -3,7 +3,6 @@ import {
   View,
   TextInput,
   StyleSheet,
-  ActivityIndicator,
   Platform,
   Pressable,
 } from 'react-native';
@@ -14,8 +13,11 @@ import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 interface ChatInputProps {
   onSendText: (message: string) => void;
   onSendAudio: () => void;
+  onStop: () => void;
   isRecording: boolean;
   isLoading: boolean;
+  editingText: string;
+  onEditingTextConsumed: () => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -50,11 +52,27 @@ function ActionButton({
   );
 }
 
-export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: ChatInputProps) {
+export function ChatInput({
+  onSendText,
+  onSendAudio,
+  onStop,
+  isRecording,
+  isLoading,
+  editingText,
+  onEditingTextConsumed,
+}: ChatInputProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const [message, setMessage] = useState('');
   const [focused, setFocused] = useState(false);
+
+  React.useEffect(() => {
+    if (editingText) {
+      setMessage(editingText);
+      onEditingTextConsumed();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingText]);
 
   const handleSend = () => {
     if (message.trim() && !isLoading) {
@@ -95,9 +113,14 @@ export function ChatInput({ onSendText, onSendAudio, isRecording, isLoading }: C
       </View>
 
       {isLoading ? (
-        <View style={[styles.actionButton, styles.loadingButton]}>
-          <ActivityIndicator color={Colors.textMuted} size="small" />
-        </View>
+        <AnimatedPressable
+          onPress={onStop}
+          style={[styles.actionButton, styles.loadingButton]}
+          accessibilityLabel="Stop generating"
+          accessibilityRole="button"
+        >
+          <Ionicons name="stop" size={18} color={Colors.error} />
+        </AnimatedPressable>
       ) : (
         <ActionButton onPress={message.trim() ? handleSend : onSendAudio} color={buttonColor}>
           <Ionicons name={buttonIcon as any} size={buttonSize} color="#FFFFFF" />

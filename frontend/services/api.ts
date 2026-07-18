@@ -41,7 +41,8 @@ export const sendTextMessage = async (
   message: string,
   language?: string,
   stream: boolean = false,
-  session_id: string = 'default'
+  session_id: string = 'default',
+  signal?: AbortSignal
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('message', message);
@@ -51,7 +52,7 @@ export const sendTextMessage = async (
   formData.append('stream', stream.toString());
   formData.append('session_id', session_id);
 
-  const response = await api.post<ChatResponse>('/chat/text', formData);
+  const response = await api.post<ChatResponse>('/chat/text', formData, { signal });
   return response.data;
 };
 
@@ -59,7 +60,8 @@ export const sendTextMessageStream = async (
   message: string,
   onChunk: (chunk: { type: string; value: string; sources?: string[] }) => void,
   language?: string,
-  session_id: string = 'default'
+  session_id: string = 'default',
+  signal?: AbortSignal
 ): Promise<void> => {
   const formData = new FormData();
   formData.append('message', message);
@@ -72,7 +74,7 @@ export const sendTextMessageStream = async (
   const response = await fetch(`${API_BASE_URL}/chat/text`, {
     method: 'POST',
     body: formData,
-    signal: AbortSignal.timeout(60000),
+    signal: signal ?? AbortSignal.timeout(60000),
   });
 
   if (!response.ok) {
