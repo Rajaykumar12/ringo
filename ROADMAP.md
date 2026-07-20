@@ -84,8 +84,8 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 11 | Markdown/code-block rendering | Med | Med | Frontend | **Done** |
 | 12 | Cross-encoder re-ranking | Med | Med | Backend | **Done** |
 | 13 | Embedding/response caching | Med | Med | Backend | **Done** |
-| 14 | Multimodal image input | Med | Med | Frontend | Pending |
-| 15 | Admin/analytics dashboard for existing RAG logs | Med | Med | Full-stack | Pending |
+| 14 | Multimodal image input | Med | Med | Frontend | **Done** |
+| 15 | Admin/analytics dashboard for existing RAG logs | Med | Med | Full-stack | **Done** |
 | 16 | Offline resilience / retry-on-reconnect | Low-Med | Med | Frontend | Pending |
 | 17 | Model routing by query complexity | Low-Med | Med | Backend | Pending |
 | 18 | i18n for UI chrome | Low | Med | Frontend | Pending |
