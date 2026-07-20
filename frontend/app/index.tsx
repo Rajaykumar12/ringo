@@ -22,6 +22,7 @@ import { ChatInput, AttachedImage } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { ConversationsPanel } from '@/components/conversations-panel';
+import { HeaderMenu } from '@/components/header-menu';
 import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, sendImageMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
@@ -52,6 +53,7 @@ export default function ChatScreen() {
 
   const [showDocuments, setShowDocuments] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
   const [initStatus, setInitStatus] = useState('System initializing...');
   const [editingText, setEditingText] = useState('');
@@ -457,22 +459,22 @@ export default function ChatScreen() {
     <SafeAreaView style={styles.container}>
       <DocumentsPanel visible={showDocuments} onClose={() => setShowDocuments(false)} />
       <ConversationsPanel visible={showHistory} onClose={() => setShowHistory(false)} />
+      <HeaderMenu
+        visible={showMenu}
+        onClose={() => setShowMenu(false)}
+        onSelectHistory={() => setShowHistory(true)}
+        onSelectDocuments={() => setShowDocuments(true)}
+        onSelectSettings={() => router.push('/settings')}
+      />
 
       <View style={[styles.header, Shadows.card]}>
         <View style={styles.headerControls}>
           <TouchableOpacity
-            onPress={() => setShowHistory(true)}
+            onPress={() => setShowMenu(true)}
             style={styles.iconBtn}
-            accessibilityLabel="Chat history"
+            accessibilityLabel="Menu"
           >
-            <Ionicons name="chatbubbles-outline" size={18} color={Colors.amber} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => setShowDocuments(true)}
-            style={styles.iconBtn}
-            accessibilityLabel="Manage documents"
-          >
-            <Ionicons name="folder-open-outline" size={18} color={Colors.amber} />
+            <Ionicons name="menu-outline" size={18} color={Colors.amber} />
           </TouchableOpacity>
         </View>
 
@@ -480,13 +482,6 @@ export default function ChatScreen() {
 
         <View style={styles.headerControls}>
           <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
-          <TouchableOpacity
-            onPress={() => router.push('/settings')}
-            style={styles.iconBtn}
-            accessibilityLabel="Settings"
-          >
-            <Ionicons name="settings-outline" size={18} color={Colors.amber} />
-          </TouchableOpacity>
         </View>
       </View>
 
