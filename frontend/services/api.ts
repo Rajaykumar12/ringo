@@ -242,6 +242,53 @@ export const getDocumentChunks = async (
   return response.data;
 };
 
+export interface AdminStats {
+  configured: boolean;
+  total_calls?: number;
+  avg_latency_ms?: number | null;
+  thumbs_up?: number;
+  thumbs_down?: number;
+  avg_faithfulness?: number | null;
+  avg_answer_relevance?: number | null;
+  avg_context_relevance?: number | null;
+  language_breakdown?: Record<string, number>;
+}
+
+export interface AdminLogEntry {
+  PartitionKey: string;
+  RowKey: string;
+  query: string;
+  response: string;
+  sources: string;
+  language: string;
+  latency_ms: number;
+  timestamp: string;
+  user_rating?: number;
+  faithfulness?: number;
+  answer_relevance?: number;
+  context_relevance?: number;
+}
+
+export const getAdminStats = async (adminKey: string, days: number = 7): Promise<AdminStats> => {
+  const response = await api.get<AdminStats>('/admin/stats', {
+    params: { days },
+    headers: { 'x-admin-key': adminKey },
+  });
+  return response.data;
+};
+
+export const getAdminLogs = async (
+  adminKey: string,
+  days: number = 1,
+  limit: number = 100
+): Promise<AdminLogEntry[]> => {
+  const response = await api.get<{ logs: AdminLogEntry[] }>('/admin/logs', {
+    params: { days, limit },
+    headers: { 'x-admin-key': adminKey },
+  });
+  return response.data.logs;
+};
+
 // Generate TTS audio on-demand
 export const generateTTS = async (
   text: string,

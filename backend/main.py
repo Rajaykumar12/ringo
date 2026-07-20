@@ -5,7 +5,7 @@ import re
 import time
 import json
 import uuid
-from fastapi import BackgroundTasks, FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, UploadFile, File, Form, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +20,7 @@ from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
 from vision import describe_image
+import admin as admin_logs
 
 from contextlib import asynccontextmanager
 
@@ -54,6 +55,16 @@ _refresh_lock = asyncio.Lock()
 def _validate_session_id(session_id: str) -> None:
     if len(session_id) > MAX_SESSION_ID_LENGTH:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
+
+
+def _require_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
+    """Gate for /admin/* routes — logs contain raw query/response text, so this
+    is not exposed without an operator-configured key."""
+    configured_key = os.environ.get("ADMIN_API_KEY")
+    if not configured_key:
+        raise HTTPException(status_code=503, detail="Admin dashboard not configured (ADMIN_API_KEY unset)")
+    if x_admin_key != configured_key:
+        raise HTTPException(status_code=401, detail="Invalid admin key")
 
 
 # ── App lifecycle ──────────────────────────────────────────────────────────────
@@ -535,6 +546,31 @@ async def get_document_chunks(source: str, query: str = ""):
         raise
     except Exception as e:
         logger.error("Chunks Error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/admin/stats")
+async def admin_stats(days: int = 7, _: None = Depends(_require_admin_key)):
+    if days < 1 or days > 90:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 90")
+    try:
+        return await asyncio.to_thread(admin_logs.get_stats, days)
+    except Exception as e:
+        logger.error("Admin stats error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/admin/logs")
+async def admin_logs_list(days: int = 1, limit: int = 100, _: None = Depends(_require_admin_key)):
+    if days < 1 or days > 90:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 90")
+    if limit < 1 or limit > 500:
+        raise HTTPException(status_code=400, detail="limit must be between 1 and 500")
+    try:
+        logs = await asyncio.to_thread(admin_logs.list_logs, days, limit)
+        return {"logs": logs}
+    except Exception as e:
+        logger.error("Admin logs error: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

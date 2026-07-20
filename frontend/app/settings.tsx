@@ -91,6 +91,21 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
+        <Text style={styles.sectionLabel}>Advanced</Text>
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={() => router.push('/admin')}
+            accessibilityLabel="Admin dashboard"
+          >
+            <Ionicons name="stats-chart-outline" size={18} color={Colors.textMuted} />
+            <View style={styles.rowText}>
+              <Text style={styles.rowName}>Admin dashboard</Text>
+              <Text style={styles.rowSub}>RAG call volume, latency, ratings, eval scores</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
