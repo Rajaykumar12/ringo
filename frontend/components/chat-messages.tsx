@@ -155,7 +155,7 @@ export function ChatMessages({
                   >
                     <Ionicons
                       name={copiedId === message.id ? 'checkmark' : 'copy-outline'}
-                      size={13}
+                      size={12}
                       color={Colors.textFaint}
                     />
                   </Pressable>
@@ -166,7 +166,7 @@ export function ChatMessages({
                       style={styles.actionIcon}
                       accessibilityLabel="Edit and resend message"
                     >
-                      <Ionicons name="pencil-outline" size={13} color={Colors.textFaint} />
+                      <Ionicons name="pencil-outline" size={12} color={Colors.textFaint} />
                     </Pressable>
                   )}
 
@@ -176,7 +176,7 @@ export function ChatMessages({
                       style={styles.actionIcon}
                       accessibilityLabel="Regenerate response"
                     >
-                      <Ionicons name="refresh-outline" size={13} color={Colors.textFaint} />
+                      <Ionicons name="refresh-outline" size={12} color={Colors.textFaint} />
                     </Pressable>
                   )}
                 </View>
@@ -262,7 +262,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   container: { flex: 1, backgroundColor: Colors.bg },
   content: { padding: 16, paddingBottom: 4, gap: 4 },
 
-  row: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 14, maxWidth: '88%', gap: 8 },
+  row: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 12, maxWidth: '88%', gap: 8 },
   rowUser: { alignSelf: 'flex-end', flexDirection: 'row-reverse' },
   rowAI: { alignSelf: 'flex-start' },
 
@@ -307,9 +307,9 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   timestamp: { fontSize: 10, color: Colors.textFaint, marginTop: 5, alignSelf: 'flex-end' },
   timestampUser: { color: 'rgba(255,255,255,0.6)' },
 
-  actionRow: { flexDirection: 'row', gap: 4, marginTop: 3, paddingHorizontal: 2 },
+  actionRow: { flexDirection: 'row', gap: 2, marginTop: 3, paddingHorizontal: 2 },
   actionRowUser: { justifyContent: 'flex-end' },
-  actionIcon: { padding: 4 },
+  actionIcon: { padding: 3, opacity: 0.55 },
 
   audioBtn: {
     width: 34,
