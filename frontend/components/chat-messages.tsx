@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
@@ -121,6 +122,10 @@ export function ChatMessages({
                   isPlayingThis && styles.bubblePlaying,
                 ]}
               >
+                {message.imageUri && (
+                  <Image source={{ uri: message.imageUri }} style={styles.attachedImage} />
+                )}
+
                 {isUser || !message.text ? (
                   <Text style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAI]}>
                     {message.text || (isUser ? '' : '…')}
@@ -294,6 +299,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   },
 
   bubbleText: { fontSize: 15, lineHeight: 22 },
+  attachedImage: { width: 200, height: 200, borderRadius: Radii.md, marginBottom: 8 },
   bubbleTextUser: { color: '#FFFFFF' },
   bubbleTextAI: { color: Colors.text },
 
