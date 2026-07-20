@@ -181,11 +181,11 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   container: {
     flexDirection: 'row',
     paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 26 : 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 22 : 12,
     backgroundColor: Colors.surface,
     alignItems: 'flex-end',
-    gap: 10,
+    gap: 8,
     ...Shadows.float,
   },
   inputWrapper: {

@@ -192,7 +192,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   },
   newBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   divider: { height: 1, backgroundColor: Colors.border, marginTop: 8 },
-  list: { padding: 16, gap: 10 },
+  list: { padding: 16, gap: 8 },
   convCard: {
     flexDirection: 'row',
     alignItems: 'center',

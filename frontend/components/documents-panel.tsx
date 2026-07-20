@@ -284,7 +284,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.textMuted },
   emptySub: { fontSize: 13, color: Colors.textFaint },
-  list: { padding: 16, gap: 10 },
+  list: { padding: 16, gap: 8 },
   listHeader: { fontSize: 13, color: Colors.textMuted, marginBottom: 4 },
   listHeaderDot: { color: Colors.amber },
   docCard: {
