@@ -255,10 +255,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     borderRadius: Radii.md,
     paddingVertical: 14,
     alignItems: 'center',
-    ...Platform.select({
-      ios: { shadowColor: Colors.amberDark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8 },
-      default: { elevation: 4 },
-    }),
+    ...Shadows.float,
   },
   uploadBtnDisabled: { backgroundColor: Colors.textFaint },
   uploadBtnInner: { flexDirection: 'row', alignItems: 'center', gap: 8 },

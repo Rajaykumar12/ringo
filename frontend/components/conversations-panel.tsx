@@ -188,10 +188,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     backgroundColor: Colors.amber,
     borderRadius: Radii.md,
     paddingVertical: 14,
-    ...Platform.select({
-      ios: { shadowColor: Colors.amberDark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 8 },
-      default: { elevation: 4 },
-    }),
+    ...Shadows.float,
   },
   newBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
   divider: { height: 1, backgroundColor: Colors.border, marginTop: 8 },

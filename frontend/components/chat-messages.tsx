@@ -281,10 +281,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   bubbleUser: {
     backgroundColor: Colors.amber,
     borderBottomRightRadius: Radii.sm,
-    ...Platform.select({
-      ios: { shadowColor: Colors.amberDark, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6 },
-      default: { elevation: 3 },
-    }),
+    ...Shadows.card,
   },
   bubbleAI: {
     backgroundColor: Colors.surface,
