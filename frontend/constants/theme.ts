@@ -84,20 +84,20 @@ export const Shadows = {
   card: Platform.select({
     ios: {
       shadowColor: '#111827',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.06,
-      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.04,
+      shadowRadius: 5,
     },
-    default: { elevation: 2 },
+    default: { elevation: 1 },
   }),
   float: Platform.select({
     ios: {
       shadowColor: '#111827',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.10,
-      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.07,
+      shadowRadius: 10,
     },
-    default: { elevation: 6 },
+    default: { elevation: 3 },
   }),
 };
 
