@@ -5,13 +5,20 @@ import {
   StyleSheet,
   Platform,
   Pressable,
+  Image,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 
+export interface AttachedImage {
+  uri: string;
+  mimeType: string;
+}
+
 interface ChatInputProps {
-  onSendText: (message: string) => void;
+  onSendText: (message: string, image?: AttachedImage) => void;
   onSendAudio: () => void;
   onStop: () => void;
   isRecording: boolean;
@@ -65,6 +72,7 @@ export function ChatInput({
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const [message, setMessage] = useState('');
   const [focused, setFocused] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
 
   React.useEffect(() => {
     if (editingText) {
@@ -75,19 +83,58 @@ export function ChatInput({
   }, [editingText]);
 
   const handleSend = () => {
-    if (message.trim() && !isLoading) {
-      onSendText(message.trim());
+    if ((message.trim() || attachedImage) && !isLoading) {
+      onSendText(message.trim(), attachedImage ?? undefined);
       setMessage('');
+      setAttachedImage(null);
     }
   };
 
-  const buttonColor = isRecording ? Colors.error : message.trim() ? Colors.amber : Colors.teal;
-  const buttonIcon = isRecording ? 'stop-circle' : message.trim() ? 'send' : 'mic';
-  const buttonSize = isRecording || !message.trim() ? 24 : 20;
+  const handleAttachImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setAttachedImage({ uri: asset.uri, mimeType: asset.mimeType ?? 'image/jpeg' });
+    }
+  };
+
+  const hasContent = message.trim() || attachedImage;
+  const buttonColor = isRecording ? Colors.error : hasContent ? Colors.amber : Colors.teal;
+  const buttonIcon = isRecording ? 'stop-circle' : hasContent ? 'send' : 'mic';
+  const buttonSize = isRecording || !hasContent ? 24 : 20;
 
   return (
     <View style={styles.container}>
+      {!isLoading && (
+        <AnimatedPressable
+          onPress={handleAttachImage}
+          style={styles.attachButton}
+          accessibilityLabel="Attach image"
+          accessibilityRole="button"
+        >
+          <Ionicons name="image-outline" size={22} color={Colors.textFaint} />
+        </AnimatedPressable>
+      )}
       <View style={[styles.inputWrapper, focused && styles.inputWrapperFocused]}>
+        {attachedImage && (
+          <View style={styles.imagePreviewRow}>
+            <Image source={{ uri: attachedImage.uri }} style={styles.imagePreview} />
+            <Pressable
+              onPress={() => setAttachedImage(null)}
+              accessibilityLabel="Remove attached image"
+              accessibilityRole="button"
+              style={styles.removeImageButton}
+            >
+              <Ionicons name="close-circle" size={18} color={Colors.textFaint} />
+            </Pressable>
+          </View>
+        )}
         <TextInput
           style={styles.input}
           placeholder="Ask anything…"
@@ -122,7 +169,7 @@ export function ChatInput({
           <Ionicons name="stop" size={18} color={Colors.error} />
         </AnimatedPressable>
       ) : (
-        <ActionButton onPress={message.trim() ? handleSend : onSendAudio} color={buttonColor}>
+        <ActionButton onPress={hasContent ? handleSend : onSendAudio} color={buttonColor}>
           <Ionicons name={buttonIcon as any} size={buttonSize} color="#FFFFFF" />
         </ActionButton>
       )}
@@ -153,6 +200,27 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
   },
   inputWrapperFocused: {
     borderColor: Colors.amber,
+  },
+  attachButton: {
+    width: 40,
+    height: 40,
+    borderRadius: Radii.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  imagePreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  imagePreview: {
+    width: 56,
+    height: 56,
+    borderRadius: Radii.md,
+  },
+  removeImageButton: {
+    marginLeft: 8,
   },
   input: {
     fontSize: 15,

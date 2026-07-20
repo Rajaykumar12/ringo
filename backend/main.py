@@ -19,6 +19,7 @@ from rag import initialize_rag, refresh_documents, get_rag_response, index_docum
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
+from vision import describe_image
 
 from contextlib import asynccontextmanager
 
@@ -43,6 +44,7 @@ def _eval_and_update(log_id: str, partition_key: str, query: str, context: str, 
 MAX_MESSAGE_LENGTH = int(os.environ.get("MAX_MESSAGE_LENGTH", 1000))
 MAX_TTS_LENGTH = int(os.environ.get("MAX_TTS_LENGTH", 5000))
 MAX_AUDIO_SIZE_MB = int(os.environ.get("MAX_AUDIO_SIZE_MB", 10))
+MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", 8))
 MAX_SESSION_ID_LENGTH = 128
 
 pipeline = None
@@ -279,6 +281,43 @@ async def text_chat(
         raise
     except Exception as e:
         logger.error("Error in text_chat: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/chat/image")
+@limiter.limit("10/minute")
+async def image_chat(
+    request: Request,
+    image: UploadFile = File(...),
+    message: str = Form(""),
+    session_id: str = Form("default"),
+):
+    """Multimodal image + optional text question, answered directly by a vision-capable
+    Groq model. Bypasses document retrieval — the RAG chain/prompts are plain-text only."""
+    _validate_session_id(session_id)
+
+    if len(message) > MAX_MESSAGE_LENGTH:
+        raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_MESSAGE_LENGTH} characters)")
+    if image.content_type and not image.content_type.startswith("image/"):
+        raise HTTPException(status_code=415, detail="File must be an image")
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    if len(image_bytes) > MAX_IMAGE_SIZE_MB * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Image too large (max {MAX_IMAGE_SIZE_MB}MB)")
+
+    logger.info("Image received: %s", image.filename)
+
+    try:
+        response = await asyncio.to_thread(
+            describe_image, image_bytes, image.content_type or "image/jpeg", message
+        )
+        return JSONResponse(content={"response": response, "sources": []})
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error in image_chat: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

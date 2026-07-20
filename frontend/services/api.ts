@@ -21,6 +21,7 @@ export interface Message {
   audio_available?: boolean;
   language?: string;
   sources?: string[];
+  imageUri?: string;
 }
 
 export interface ChatResponse {
@@ -148,6 +149,39 @@ export const sendAudioMessage = async (
     responseText: data.response || '',
     language: data.language || language || 'en',
   };
+};
+
+export interface ImageChatResponse {
+  response: string;
+  sources?: string[];
+}
+
+export const sendImageMessage = async (
+  imageUri: string,
+  message: string,
+  mimeType: string = 'image/jpeg',
+  session_id: string = 'default',
+  signal?: AbortSignal
+): Promise<ImageChatResponse> => {
+  const formData = new FormData();
+
+  if (typeof window !== 'undefined' && (imageUri.startsWith('blob:') || imageUri.startsWith('data:'))) {
+    const res = await fetch(imageUri);
+    const blob = await res.blob();
+    formData.append('image', blob, 'image.jpg');
+  } else {
+    // @ts-ignore - React Native FormData supports file objects
+    formData.append('image', { uri: imageUri, type: mimeType, name: 'image.jpg' } as any);
+  }
+
+  formData.append('message', message);
+  formData.append('session_id', session_id);
+
+  const response = await api.post<ImageChatResponse>('/chat/image', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    signal,
+  });
+  return response.data;
 };
 
 export interface DocumentInfo {

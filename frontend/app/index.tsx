@@ -18,11 +18,11 @@ import { useConversations } from '@/hooks/use-conversations';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
-import { ChatInput } from '@/components/chat-input';
+import { ChatInput, AttachedImage } from '@/components/chat-input';
 import { LanguageSelector, Language } from '@/components/language-selector';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { ConversationsPanel } from '@/components/conversations-panel';
-import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, AudioChatResponse, generateTTS } from '@/services/api';
+import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, sendImageMessage, AudioChatResponse, generateTTS } from '@/services/api';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -192,13 +192,17 @@ export default function ChatScreen() {
 
   // Handle text message send. `skipUserMessage` is used by regenerate, which
   // resends an existing user message's text without appending a new bubble.
-  const handleSendText = async (text: string, options?: { skipUserMessage?: boolean }) => {
+  const handleSendText = async (
+    text: string,
+    options?: { skipUserMessage?: boolean; image?: AttachedImage }
+  ) => {
     if (!options?.skipUserMessage) {
       const userMessage: Message = {
         id: Date.now().toString(),
         text,
         sender: 'user',
         timestamp: new Date(),
+        imageUri: options?.image?.uri,
       };
       setMessages((prev) => [...prev, userMessage]);
     }
@@ -207,7 +211,18 @@ export default function ChatScreen() {
     abortControllerRef.current = controller;
 
     try {
-      if (useStreaming) {
+      if (options?.image) {
+        const response = await sendImageMessage(
+          options.image.uri, text, options.image.mimeType, sessionId, controller.signal
+        );
+        const aiMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          text: response.response,
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, aiMessage]);
+      } else if (useStreaming) {
         // Streaming mode
         const aiMessageId = (Date.now() + 1).toString();
         let streamedText = '';
@@ -493,7 +508,7 @@ export default function ChatScreen() {
           isLoading={isLoading}
         />
         <ChatInput
-          onSendText={handleSendText}
+          onSendText={(text, image) => handleSendText(text, { image })}
           onSendAudio={handleSendAudio}
           onStop={handleStopGenerating}
           isRecording={isRecording}
