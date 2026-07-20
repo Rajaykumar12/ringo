@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import React, { Component, ReactNode } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Radii, useThemeColors } from '@/constants/theme';
 import { SettingsProvider, useAppSettings } from '@/hooks/use-app-settings';
@@ -34,7 +35,7 @@ class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<
       return (
         <View style={styles.container}>
           <View style={styles.iconWrap}>
-            <Text style={styles.icon}>⚠️</Text>
+            <Ionicons name="alert-circle-outline" size={32} color={this.props.colors.amber} />
           </View>
           <Text style={styles.title}>Something went wrong</Text>
           <Text style={styles.message}>An unexpected error occurred. Please try again.</Text>
@@ -90,7 +91,6 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     alignItems: 'center',
     marginBottom: 20,
   },
-  icon: { fontSize: 32 },
   title: { fontSize: 20, fontWeight: '700', color: Colors.text, marginBottom: 8, textAlign: 'center' },
   message: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginBottom: 28, lineHeight: 20 },
   button: {

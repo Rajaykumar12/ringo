@@ -17,12 +17,12 @@ interface LanguageSelectorProps {
   onSelectLanguage: (language: Language) => void;
 }
 
-export const LANGUAGES: { code: Language; name: string; nativeName: string; flag: string }[] = [
-  { code: 'auto', name: 'Auto-Detect', nativeName: 'Auto',   flag: '🌐' },
-  { code: 'en',   name: 'English',     nativeName: 'English', flag: '🇬🇧' },
-  { code: 'hi',   name: 'Hindi',       nativeName: 'हिंदी',   flag: '🇮🇳' },
-  { code: 'ta',   name: 'Tamil',       nativeName: 'தமிழ்',   flag: '🇮🇳' },
-  { code: 'te',   name: 'Telugu',      nativeName: 'తెలుగు',  flag: '🇮🇳' },
+export const LANGUAGES: { code: Language; name: string; nativeName: string; shortCode: string }[] = [
+  { code: 'auto', name: 'Auto-Detect', nativeName: 'Auto',   shortCode: 'AUTO' },
+  { code: 'en',   name: 'English',     nativeName: 'English', shortCode: 'EN' },
+  { code: 'hi',   name: 'Hindi',       nativeName: 'हिंदी',   shortCode: 'HI' },
+  { code: 'ta',   name: 'Tamil',       nativeName: 'தமிழ்',   shortCode: 'TA' },
+  { code: 'te',   name: 'Telugu',      nativeName: 'తెలుగు',  shortCode: 'TE' },
 ];
 
 export function LanguageSelector({ selectedLanguage, onSelectLanguage }: LanguageSelectorProps) {
@@ -38,7 +38,7 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
         onPress={() => setVisible(true)}
         accessibilityLabel={`Language: ${current?.name}. Tap to change`}
       >
-        <Text style={styles.buttonFlag}>{current?.flag}</Text>
+        <Text style={styles.buttonCode}>{current?.shortCode}</Text>
         <Text style={styles.buttonText}>{current?.nativeName}</Text>
         <Ionicons name="chevron-down" size={12} color={Colors.textMuted} />
       </TouchableOpacity>
@@ -56,7 +56,7 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
                   onPress={() => { onSelectLanguage(lang.code); setVisible(false); }}
                   accessibilityLabel={`${lang.name}${isSelected ? ', selected' : ''}`}
                 >
-                  <Text style={styles.rowFlag}>{lang.flag}</Text>
+                  <Text style={styles.rowCode}>{lang.shortCode}</Text>
                   <View style={styles.rowText}>
                     <Text style={[styles.rowName, isSelected && styles.rowNameSelected]}>
                       {lang.nativeName}
@@ -88,7 +88,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     paddingHorizontal: 11,
     paddingVertical: 6,
   },
-  buttonFlag: { fontSize: 14 },
+  buttonCode: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5 },
   buttonText: { fontSize: 13, fontWeight: '600', color: Colors.text },
   overlay: {
     flex: 1,
@@ -126,7 +126,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     backgroundColor: Colors.amberLight,
     borderLeftColor: Colors.amber,
   },
-  rowFlag: { fontSize: 20 },
+  rowCode: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5, width: 34 },
   rowText: { flex: 1 },
   rowName: { fontSize: 16, fontWeight: '600', color: Colors.text },
   rowNameSelected: { color: Colors.amberDark },

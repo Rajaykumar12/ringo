@@ -65,7 +65,7 @@ export default function SettingsScreen() {
                 onPress={() => setDefaultLanguage(lang.code)}
                 accessibilityLabel={`${lang.name}${selected ? ', selected' : ''}`}
               >
-                <Text style={styles.rowFlag}>{lang.flag}</Text>
+                <Text style={styles.rowCode}>{lang.shortCode}</Text>
                 <View style={styles.rowText}>
                   <Text style={[styles.rowName, selected && styles.rowNameSelected]}>{lang.nativeName}</Text>
                   <Text style={styles.rowSub}>{lang.name}</Text>
@@ -170,7 +170,7 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     borderBottomColor: Colors.border,
   },
   rowSelected: { backgroundColor: Colors.amberLight },
-  rowFlag: { fontSize: 20 },
+  rowCode: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.5, width: 34 },
   rowText: { flex: 1 },
   rowName: { fontSize: 15, fontWeight: '600', color: Colors.text },
   rowNameSelected: { color: Colors.amberDark },
