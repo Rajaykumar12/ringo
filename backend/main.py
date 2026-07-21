@@ -110,7 +110,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # default only matches this project's "adk-*" app naming, not any tenant on the shared domain.
 _ALLOWED_ORIGINS_ENV = os.environ.get(
     "ALLOWED_ORIGINS",
-    "http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006"
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006"
 ).split(",")
 
 ALLOWED_ORIGINS = _ALLOWED_ORIGINS_ENV
