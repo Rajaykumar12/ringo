@@ -1,0 +1,111 @@
+{
+  "app": {
+    "title": "AI அரட்டை",
+    "menu": "மெனு",
+    "initializing": "கணினி தொடங்குகிறது...",
+    "ready": "தயார்",
+    "readyNoDocuments": "கணினி தயார் (ஆவணங்கள் எதுவும் சேர்க்கப்படவில்லை)",
+    "backendUnavailable": "பின்தளம் கிடைக்கவில்லை — உங்கள் இணைப்பைச் சரிபார்க்கவும்"
+  },
+  "common": {
+    "error": "பிழை",
+    "cancel": "ரத்துசெய்",
+    "remove": "அகற்று",
+    "tryAgain": "மீண்டும் முயற்சிக்கவும்"
+  },
+  "offline": {
+    "banner": "நீங்கள் ஆஃப்லைனில் உள்ளீர்கள்",
+    "title": "நீங்கள் ஆஃப்லைனில் உள்ளீர்கள்",
+    "message": "மீண்டும் இணைத்து முயற்சிக்கவும்."
+  },
+  "chat": {
+    "placeholder": "எதையும் கேளுங்கள்…",
+    "sendTextError": "செய்தி அனுப்ப முடியவில்லை. உங்கள் இணைப்பையும் API URL-ஐயும் சரிபார்க்கவும்.",
+    "sendAudioError": "ஆடியோ அனுப்ப முடியவில்லை. உங்கள் இணைப்பையும் API URL-ஐயும் சரிபார்க்கவும்.",
+    "voiceMessage": "குரல் செய்தி",
+    "voiceLabel": "குரல்",
+    "attachImage": "படத்தை இணைக்கவும்",
+    "removeAttachedImage": "இணைக்கப்பட்ட படத்தை அகற்று",
+    "stopGenerating": "நிறுத்து",
+    "copyMessage": "செய்தியை நகலெடு",
+    "editMessage": "திருத்தி மீண்டும் அனுப்பு",
+    "regenerate": "பதிலை மீண்டும் உருவாக்கு",
+    "playAudio": "ஆடியோவை இயக்கு",
+    "pauseAudio": "ஆடியோவை இடைநிறுத்து"
+  },
+  "permissions": {
+    "title": "அனுமதி தேவை",
+    "microphone": "மைக்ரோஃபோன் அனுமதியை வழங்கவும்"
+  },
+  "recording": {
+    "limitTitle": "பதிவு வரம்பு எட்டப்பட்டது",
+    "limitMessage": "அதிகபட்ச பதிவு நேரம் 2 நிமிடங்கள்.",
+    "startError": "பதிவு தொடங்க முடியவில்லை",
+    "noAudio": "ஆடியோ எதுவும் பதிவு செய்யப்படவில்லை"
+  },
+  "audio": {
+    "generateError": "ஆடியோ உருவாக்க முடியவில்லை",
+    "playError": "ஆடியோ இயக்க முடியவில்லை"
+  },
+  "documents": {
+    "title": "ஆவணங்கள்",
+    "close": "ஆவணப் பலகத்தை மூடு",
+    "subtitle": "அறிவுத் தளத்தை விரிவாக்க PDF, PowerPoint அல்லது Markdown பதிவேற்றவும்.",
+    "upload": "ஆவணத்தைப் பதிவேற்று",
+    "uploading": "பதிவேற்றுகிறது",
+    "hint": "PDF · PPTX · Markdown — அதிகபட்சம் 20 MB",
+    "loadFailed": "ஆவணங்களை ஏற்ற முடியவில்லை.",
+    "fileTooLargeTitle": "கோப்பு மிகப் பெரியது",
+    "fileTooLargeMessage": "\"{filename}\" {limit}MB வரம்பை மீறுகிறது.",
+    "uploadFailedTitle": "பதிவேற்றம் தோல்வியடைந்தது",
+    "uploadFailedGeneric": "ஏதோ தவறு நடந்தது. மீண்டும் முயற்சிக்கவும்.",
+    "removeTitle": "ஆவணத்தை அகற்று",
+    "removeConfirm": "\"{filename}\" ஐ குறியீட்டிலிருந்து அகற்றவா?",
+    "deleteFailed": "நீக்குதல் தோல்வியடைந்தது. மீண்டும் முயற்சிக்கவும்.",
+    "emptyTitle": "இதுவரை ஆவணங்கள் இல்லை",
+    "emptySub": "தொடங்க ஒரு கோப்பைப் பதிவேற்றவும்.",
+    "indexedCount": "{count} ஆவணங்கள் குறியிடப்பட்டன",
+    "remove": "{filename} ஐ அகற்று"
+  },
+  "conversations": {
+    "title": "அரட்டைகள்",
+    "close": "அரட்டை வரலாற்றை மூடு",
+    "newChat": "புதிய அரட்டை",
+    "startNewChat": "புதிய அரட்டையைத் தொடங்கு",
+    "openChat": "அரட்டையைத் திற: {title}",
+    "rename": "{title} ஐ மறுபெயரிடு",
+    "delete": "{title} ஐ நீக்கு",
+    "deleteConfirm": "\"{title}\" ஐ நீக்கவா?",
+    "messageCount": "{count} செய்திகள்"
+  },
+  "menu": {
+    "chatHistory": "அரட்டை வரலாறு",
+    "documents": "ஆவணங்கள்",
+    "settings": "அமைப்புகள்"
+  },
+  "language": {
+    "title": "மொழி",
+    "current": "மொழி: {name}. மாற்ற தட்டவும்"
+  },
+  "settings": {
+    "title": "அமைப்புகள்",
+    "close": "அமைப்புகளை மூடு",
+    "appearance": "தோற்றம்",
+    "themeSystem": "சிஸ்டம்",
+    "themeLight": "வெளிர்",
+    "themeDark": "இருள்",
+    "defaultLanguage": "இயல்புநிலை பதில் மொழி",
+    "uiLanguage": "பயன்பாட்டு மொழி",
+    "responses": "பதில்கள்",
+    "streamResponses": "பதில்களை ஸ்ட்ரீம் செய்",
+    "streamResponsesSub": "AI இன் பதிலை அது உருவாகும்போதே, டோக்கன் வாரியாகக் காட்டு.",
+    "advanced": "மேம்பட்ட",
+    "adminDashboard": "நிர்வாக டாஷ்போர்டு",
+    "adminDashboardSub": "RAG அழைப்பு அளவு, தாமதம், மதிப்பீடுகள், மதிப்பீட்டு மதிப்பெண்கள்"
+  },
+  "errorBoundary": {
+    "title": "ஏதோ தவறு நடந்தது",
+    "message": "எதிர்பாராத பிழை ஏற்பட்டது. மீண்டும் முயற்சிக்கவும்.",
+    "tryAgain": "மீண்டும் முயற்சிக்கவும்"
+  }
+}

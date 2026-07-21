@@ -1,0 +1,102 @@
+:root,
+:root[data-theme='light'] {
+  /* Backgrounds */
+  --color-bg: #F9F9F8;
+  --color-surface: #FFFFFF;
+  --color-surface-warm: #F3F4F6;
+  --color-surface-mid: #E5E7EB;
+
+  /* Dark gray — primary actions */
+  --color-amber: #4B5563;
+  --color-amber-dark: #374151;
+  --color-amber-light: #E5E7EB;
+
+  /* Mid gray — secondary actions */
+  --color-teal: #6B7280;
+  --color-teal-light: #F3F4F6;
+
+  /* Text */
+  --color-text: #111827;
+  --color-text-muted: #6B7280;
+  --color-text-faint: #9CA3AF;
+
+  /* Borders */
+  --color-border: #E5E7EB;
+  --color-border-mid: #D1D5DB;
+
+  /* Status */
+  --color-error: #DC2626;
+  --color-error-light: #FEE2E2;
+  --color-success: #16A34A;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 5px rgba(17, 24, 39, 0.04);
+  --shadow-float: 0 2px 10px rgba(17, 24, 39, 0.07);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  /* Backgrounds */
+  --color-bg: #0E1116;
+  --color-surface: #181C23;
+  --color-surface-warm: #20252D;
+  --color-surface-mid: #2A303A;
+
+  /* Light gray — primary actions (inverted for dark) */
+  --color-amber: #9CA3AF;
+  --color-amber-dark: #D1D5DB;
+  --color-amber-light: #2A303A;
+
+  /* Mid gray — secondary actions */
+  --color-teal: #9CA3AF;
+  --color-teal-light: #20252D;
+
+  /* Text */
+  --color-text: #F3F4F6;
+  --color-text-muted: #9CA3AF;
+  --color-text-faint: #6B7280;
+
+  /* Borders */
+  --color-border: #2A303A;
+  --color-border-mid: #3A414D;
+
+  /* Status */
+  --color-error: #F87171;
+  --color-error-light: #3F1D1D;
+  --color-success: #4ADE80;
+
+  --shadow-card: 0 1px 5px rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 2px 10px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+}
