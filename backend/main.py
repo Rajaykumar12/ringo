@@ -15,7 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, rag_system as _rag_ref
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from blob_sync import upload_document, delete_document
@@ -249,9 +249,16 @@ async def text_chat(
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
 
+            model_tier = pick_model(message, docs, context)
+            chain = (
+                rag_system.rag_chain_fast_with_history
+                if model_tier == "fast" and rag_system.rag_chain_fast_with_history
+                else rag_system.rag_chain_with_history
+            )
+
             full_response = ""
             try:
-                async for chunk in rag_system.rag_chain_with_history.astream(
+                async for chunk in chain.astream(
                     {"context": context, "question": message, "language": lang_name},
                     config={"configurable": {"session_id": session_id}},
                 ):
@@ -263,7 +270,7 @@ async def text_chat(
                 logger.error("[stream_response] LLM streaming error: %s: %s", type(e).__name__, e)
                 yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
-            log_id, partition_key = log_rag_call(message, full_response, sources, lang, 0, context)
+            log_id, partition_key = log_rag_call(message, full_response, sources, lang, 0, context, model_tier=model_tier)
             asyncio.get_running_loop().run_in_executor(
                 None, _eval_and_update, log_id, partition_key, message, context, full_response
             )
@@ -280,7 +287,8 @@ async def text_chat(
         context = result.pop("context", "")
         log_id, partition_key = log_rag_call(
             message, result["response"], result.get("sources", []),
-            result.get("language", "en"), latency_ms, context
+            result.get("language", "en"), latency_ms, context,
+            model_tier=result.get("model_tier", "default"),
         )
         background_tasks.add_task(
             _eval_and_update, log_id, partition_key, message, context, result["response"]

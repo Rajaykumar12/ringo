@@ -90,6 +90,7 @@ class RAGRetriever:
             "response": result["response"],
             "sources": result.get("sources", []),
             "context": result.get("context", ""),
+            "model_tier": result.get("model_tier", "default"),
             "query": query,
             "language": language,
             "source": refined_query["source"]
@@ -103,6 +104,7 @@ class ResponseGenerator:
             "response": retrieval_result["response"],
             "sources": retrieval_result.get("sources", []),
             "context": retrieval_result.get("context", ""),
+            "model_tier": retrieval_result.get("model_tier", "default"),
             "language": retrieval_result["language"],
             "source": retrieval_result["source"],
             "query": retrieval_result["query"]

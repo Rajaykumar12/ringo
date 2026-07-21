@@ -18,6 +18,7 @@ def log_rag_call(
     language: str,
     latency_ms: int,
     context: str = "",
+    model_tier: str = "default",
 ) -> tuple[str, str]:
     """Log a RAG call. Returns (log_id, partition_key) — even when Azure is not configured."""
     log_id = str(uuid.uuid4())
@@ -41,6 +42,7 @@ def log_rag_call(
             "language": language,
             "latency_ms": latency_ms,
             "context": context[:2000],
+            "model_tier": model_tier,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         table.upsert_entity(entity)

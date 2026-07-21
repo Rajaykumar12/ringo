@@ -85,15 +85,20 @@ class LangChainRAG:
             underlying_embeddings, embedding_cache_store, namespace="all-MiniLM-L6-v2", key_encoder="sha256"
         )
 
-        # LLM — Groq Llama 3.3 70B
+        # LLM — Groq Llama 3.3 70B (default) + Llama 3.1 8B (fast tier, routed by query
+        # complexity — see rag.py:pick_model)
         self.llm = ChatGroq(
             model="llama-3.3-70b-versatile", api_key=self.groq_api_key, temperature=0.7
+        )
+        self.llm_fast = ChatGroq(
+            model="llama-3.1-8b-instant", api_key=self.groq_api_key, temperature=0.7
         )
         logger.info("Groq API initialized")
 
         self.vectorstore = None
         self.bm25_retriever: Optional[BM25Retriever] = None
         self.rag_chain_with_history = None
+        self.rag_chain_fast_with_history = None
 
         self._try_load_existing_vectorstore()
 
@@ -132,11 +137,8 @@ class LangChainRAG:
             self.vectorstore = None
             self.bm25_retriever = None
 
-    def _build_rag_chain(self):
-        """Build the LCEL chain with conversation history."""
-        if not self.vectorstore:
-            return
-
+    def _wrap_chain(self, llm) -> RunnableWithMessageHistory:
+        """Build an LCEL chain with conversation history for a given LLM instance."""
         prompt = ChatPromptTemplate.from_messages([
             ("system", """You are a helpful AI assistant. Use the provided context to answer accurately.
 
@@ -156,15 +158,23 @@ Instructions:
             ("human", "{question}"),
         ])
 
-        chain = prompt | self.llm | StrOutputParser()
+        chain = prompt | llm | StrOutputParser()
 
-        self.rag_chain_with_history = RunnableWithMessageHistory(
+        return RunnableWithMessageHistory(
             chain,
             get_session_history,
             input_messages_key="question",
             history_messages_key="history",
         )
-        logger.info("RAG chain with conversation history built")
+
+    def _build_rag_chain(self):
+        """Build the default and fast-tier LCEL chains, both sharing conversation history."""
+        if not self.vectorstore:
+            return
+
+        self.rag_chain_with_history = self._wrap_chain(self.llm)
+        self.rag_chain_fast_with_history = self._wrap_chain(self.llm_fast)
+        logger.info("RAG chains with conversation history built (default + fast tier)")
 
     def _load_pdf(self, filepath: str, filename: str) -> List[Document]:
         """Load PDF per-page using PyMuPDF with OCR on embedded images."""

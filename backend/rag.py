@@ -56,6 +56,28 @@ def _is_structural_query(query: str) -> bool:
     return any(kw in q for kw in _STRUCTURAL_KW)
 
 
+# Conservative thresholds — false negatives (using the big model when the small one
+# would've sufficed) are cheap; false positives (routing a genuinely complex question
+# to the 8B model) degrade answer quality, so bias toward "default".
+_FAST_MAX_QUERY_LEN = 60
+_FAST_MAX_DOCS = 3
+_FAST_MAX_CONTEXT_LEN = 800
+_FAST_MAX_HISTORY_LEN = 2
+
+
+def pick_model(query: str, docs: List[Document], context: str, history_len: int = 0) -> str:
+    """Route short, simple, early-conversation queries to the cheaper/faster model tier."""
+    if _is_structural_query(query):
+        return "default"
+    if len(query) > _FAST_MAX_QUERY_LEN:
+        return "default"
+    if len(docs) > _FAST_MAX_DOCS or len(context) > _FAST_MAX_CONTEXT_LEN:
+        return "default"
+    if history_len > _FAST_MAX_HISTORY_LEN:
+        return "default"
+    return "fast"
+
+
 def _format_chunk(doc: Document) -> str:
     meta = doc.metadata
     source = meta.get("source", "Unknown")
@@ -179,10 +201,18 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
                 logger.info("Response cache hit for first-turn query")
                 history.add_user_message(query)
                 history.add_ai_message(cached)
-                return {"response": cached, "sources": sources, "context": context}
+                return {"response": cached, "sources": sources, "context": context, "model_tier": "cache"}
+
+        # Route to the fast/cheap model tier for short, simple, early-conversation queries
+        model_tier = pick_model(query, docs, context, len(history.messages))
+        chain = (
+            rag_system.rag_chain_fast_with_history
+            if model_tier == "fast" and rag_system.rag_chain_fast_with_history
+            else rag_system.rag_chain_with_history
+        )
 
         # Invoke chain with Redis-backed conversation history
-        response = rag_system.rag_chain_with_history.invoke(
+        response = chain.invoke(
             {"context": context, "question": query, "language": language_name},
             config={"configurable": {"session_id": session_id}},
         )
@@ -190,7 +220,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
         if cache_key:
             set_cached_response(cache_key, response)
 
-        return {"response": response, "sources": sources, "context": context}
+        return {"response": response, "sources": sources, "context": context, "model_tier": model_tier}
 
     except Exception as e:
         logger.error("RAG Error: %s", e)
