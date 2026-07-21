@@ -332,6 +332,19 @@ async def image_chat(
         response = await asyncio.to_thread(
             describe_image, image_bytes, image.content_type or "image/jpeg", message
         )
+
+        # Record the exchange in session memory so later text-only turns (which go
+        # through the RAG chain's history, not the vision model) can still recall
+        # what was in the image — the RAG chain itself never sees the image bytes.
+        try:
+            from memory import get_session_history
+            history = get_session_history(session_id)
+            user_turn = message.strip() if message.strip() else "[User shared an image]"
+            history.add_user_message(f"{user_turn} (attached an image)")
+            history.add_ai_message(response)
+        except Exception as e:
+            logger.warning("Failed to record image turn in session memory: %s", e)
+
         return JSONResponse(content={"response": response, "sources": []})
     except HTTPException:
         raise
