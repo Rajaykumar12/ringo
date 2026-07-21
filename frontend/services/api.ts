@@ -2,14 +2,37 @@ import axios from 'axios';
 
 // Update this to your backend URL
 // For Azure: set EXPO_PUBLIC_API_URL env var during docker build
-// For local dev: defaults to localhost:8000
+// For local dev: defaults to localhost:8000 (via __DEV__, so it works with zero config)
 const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
+const DEV_API_URL = 'http://localhost:8000';
 
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || (__DEV__ ? DEV_API_URL : PRODUCTION_API_URL);
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000, // [High #7] Increased from 30s to 60s for RAG + cold-start
 });
+
+// Retry only on network-level failures (no response received) or 5xx — never on 4xx,
+// since those are client errors (validation, rate limit, etc.) that retrying won't fix.
+const isRetryableError = (error: any) =>
+  !error?.response || (error.response.status >= 500 && error.response.status < 600);
+
+api.interceptors.response.use(undefined, async (error) => {
+  const config = error?.config;
+  if (!config || config.__retryCount >= 2 || !isRetryableError(error)) {
+    throw error;
+  }
+  config.__retryCount = (config.__retryCount ?? 0) + 1;
+  await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** (config.__retryCount - 1)));
+  return api(config);
+});
+
+export class OfflineError extends Error {
+  constructor() {
+    super('You appear to be offline. Check your connection and try again.');
+    this.name = 'OfflineError';
+  }
+}
 
 export interface Message {
   id: string;
@@ -72,10 +95,15 @@ export const sendTextMessageStream = async (
   formData.append('stream', 'true');
   formData.append('session_id', session_id);
 
+  // A caller-provided signal (e.g. the "stop generating" button) must not disable the
+  // timeout — combine them so an unreachable/hung backend can't block forever.
+  const timeoutSignal = AbortSignal.timeout(60000);
+  const combinedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+
   const response = await fetch(`${API_BASE_URL}/chat/text`, {
     method: 'POST',
     body: formData,
-    signal: signal ?? AbortSignal.timeout(60000),
+    signal: combinedSignal,
   });
 
   if (!response.ok) {
