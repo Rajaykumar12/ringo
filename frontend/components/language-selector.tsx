@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { useTranslation } from '@/hooks/use-translation';
 
 export type Language = 'en' | 'hi' | 'ta' | 'te' | 'auto';
 
@@ -28,6 +29,7 @@ export const LANGUAGES: { code: Language; name: string; nativeName: string; shor
 export function LanguageSelector({ selectedLanguage, onSelectLanguage }: LanguageSelectorProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { t } = useTranslation();
   const [visible, setVisible] = React.useState(false);
   const current = LANGUAGES.find((l) => l.code === selectedLanguage);
 
@@ -36,7 +38,8 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
       <TouchableOpacity
         style={styles.button}
         onPress={() => setVisible(true)}
-        accessibilityLabel={`Language: ${current?.name}. Tap to change`}
+        accessibilityLabel={t('language.current', { name: current?.name ?? '' })}
+        accessibilityRole="button"
       >
         <Text style={styles.buttonCode}>{current?.shortCode}</Text>
         <Text style={styles.buttonText}>{current?.nativeName}</Text>
@@ -45,8 +48,8 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
 
       <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
         <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setVisible(false)}>
-          <View style={[styles.modal, Shadows.float]}>
-            <Text style={styles.title}>Language</Text>
+          <View style={[styles.modal, Shadows.float]} accessibilityViewIsModal>
+            <Text style={styles.title} accessibilityRole="header">{t('language.title')}</Text>
             {LANGUAGES.map((lang) => {
               const isSelected = selectedLanguage === lang.code;
               return (
@@ -55,6 +58,8 @@ export function LanguageSelector({ selectedLanguage, onSelectLanguage }: Languag
                   style={[styles.row, isSelected && styles.rowSelected]}
                   onPress={() => { onSelectLanguage(lang.code); setVisible(false); }}
                   accessibilityLabel={`${lang.name}${isSelected ? ', selected' : ''}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <Text style={styles.rowCode}>{lang.shortCode}</Text>
                   <View style={styles.rowText}>

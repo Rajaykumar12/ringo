@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { listDocuments, uploadDocument, deleteDocument, DocumentInfo } from '@/services/api';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface DocumentsPanelProps {
   visible: boolean;
@@ -50,6 +51,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const TYPE_ICON = React.useMemo(() => createTypeIcon(Colors), [Colors]);
+  const { t } = useTranslation();
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -62,7 +64,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
     try {
       setDocuments(await listDocuments());
     } catch {
-      setError('Failed to load documents.');
+      setError(t('documents.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -81,7 +83,10 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
 
       const asset = result.assets[0];
       if (asset.size && asset.size > MAX_DOCUMENT_SIZE_MB * 1024 * 1024) {
-        Alert.alert('File Too Large', `"${asset.name}" exceeds the ${MAX_DOCUMENT_SIZE_MB}MB limit.`);
+        Alert.alert(
+          t('documents.fileTooLargeTitle'),
+          t('documents.fileTooLargeMessage', { filename: asset.name, limit: MAX_DOCUMENT_SIZE_MB })
+        );
         return;
       }
       setUploading(true);
@@ -89,7 +94,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       await uploadDocument(asset.uri, asset.name, asset.mimeType ?? 'application/octet-stream', setUploadProgress);
       await fetchDocuments();
     } catch (e: any) {
-      Alert.alert('Upload Failed', getErrorMessage(e, 'Something went wrong. Please try again.'));
+      Alert.alert(t('documents.uploadFailedTitle'), getErrorMessage(e, t('documents.uploadFailedGeneric')));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -97,12 +102,13 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   };
 
   const handleDelete = async (filename: string) => {
+    const confirmMessage = t('documents.removeConfirm', { filename });
     const confirmed = Platform.OS === 'web'
-      ? window.confirm(`Remove "${filename}" from the index?`)
+      ? window.confirm(confirmMessage)
       : await new Promise<boolean>((resolve) =>
-          Alert.alert('Remove Document', `Remove "${filename}" from the index?`, [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Remove', style: 'destructive', onPress: () => resolve(true) },
+          Alert.alert(t('documents.removeTitle'), confirmMessage, [
+            { text: t('common.cancel'), style: 'cancel', onPress: () => resolve(false) },
+            { text: t('common.remove'), style: 'destructive', onPress: () => resolve(true) },
           ])
         );
     if (!confirmed) return;
@@ -110,8 +116,8 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       await deleteDocument(filename);
       await fetchDocuments();
     } catch (e: any) {
-      const msg = getErrorMessage(e, 'Delete failed. Please try again.');
-      Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Error', msg);
+      const msg = getErrorMessage(e, t('documents.deleteFailed'));
+      Platform.OS === 'web' ? window.alert(msg) : Alert.alert(t('common.error'), msg);
     }
   };
 
@@ -119,45 +125,46 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} accessibilityViewIsModal>
         {/* Header */}
         <View style={[styles.header, Shadows.card]}>
           <View style={styles.headerTitle}>
             <View style={styles.headerIconWrap}>
               <Ionicons name="folder-open" size={18} color={Colors.amber} />
             </View>
-            <Text style={styles.title}>Documents</Text>
+            <Text style={styles.title} accessibilityRole="header">{t('documents.title')}</Text>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close documents panel">
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel={t('documents.close')} accessibilityRole="button">
             <Ionicons name="close" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.subtitle}>Upload PDFs, PowerPoints, or Markdown to expand the knowledge base.</Text>
+        <Text style={styles.subtitle}>{t('documents.subtitle')}</Text>
 
         {/* Upload button */}
         <TouchableOpacity
           style={[styles.uploadBtn, uploading && styles.uploadBtnDisabled]}
           onPress={handlePick}
           disabled={uploading}
-          accessibilityLabel="Upload document"
+          accessibilityLabel={t('documents.upload')}
+          accessibilityRole="button"
         >
           {uploading ? (
             <View style={styles.uploadBtnInner}>
               <ActivityIndicator size="small" color="#FFF" />
               <Text style={styles.uploadBtnText}>
-                Uploading{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}
+                {t('documents.uploading')}{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}
               </Text>
             </View>
           ) : (
             <View style={styles.uploadBtnInner}>
               <Ionicons name="cloud-upload-outline" size={18} color="#FFF" />
-              <Text style={styles.uploadBtnText}>Upload Document</Text>
+              <Text style={styles.uploadBtnText}>{t('documents.upload')}</Text>
             </View>
           )}
         </TouchableOpacity>
 
-        <Text style={styles.hint}>PDF · PPTX · Markdown — max 20 MB</Text>
+        <Text style={styles.hint}>{t('documents.hint')}</Text>
 
         {/* Divider */}
         <View style={styles.divider} />
@@ -173,8 +180,13 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
               <Ionicons name="alert-circle-outline" size={28} color={Colors.error} />
             </View>
             <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={fetchDocuments} style={styles.retryBtn}>
-              <Text style={styles.retryBtnText}>Try Again</Text>
+            <TouchableOpacity
+              onPress={fetchDocuments}
+              style={styles.retryBtn}
+              accessibilityLabel={t('common.tryAgain')}
+              accessibilityRole="button"
+            >
+              <Text style={styles.retryBtnText}>{t('common.tryAgain')}</Text>
             </TouchableOpacity>
           </View>
         ) : documents.length === 0 ? (
@@ -182,14 +194,14 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
             <View style={styles.emptyIconWrap}>
               <Ionicons name="folder-open-outline" size={36} color={Colors.amber} />
             </View>
-            <Text style={styles.emptyTitle}>No documents yet</Text>
-            <Text style={styles.emptySub}>Upload a file to get started.</Text>
+            <Text style={styles.emptyTitle}>{t('documents.emptyTitle')}</Text>
+            <Text style={styles.emptySub}>{t('documents.emptySub')}</Text>
           </View>
         ) : (
           <ScrollView contentContainerStyle={styles.list}>
             <Text style={styles.listHeader}>
               <Text style={styles.listHeaderDot}>● </Text>
-              {documents.length} document{documents.length !== 1 ? 's' : ''} indexed
+              {t('documents.indexedCount', { count: documents.length })}
             </Text>
             {documents.map((doc) => {
               const icon = getTypeIcon(doc.type);
@@ -205,7 +217,8 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
                   <TouchableOpacity
                     onPress={() => handleDelete(doc.filename)}
                     style={styles.deleteBtn}
-                    accessibilityLabel={`Remove ${doc.filename}`}
+                    accessibilityLabel={t('documents.remove', { filename: doc.filename })}
+                    accessibilityRole="button"
                   >
                     <Ionicons name="trash-outline" size={16} color={Colors.error} />
                   </TouchableOpacity>

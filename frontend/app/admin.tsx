@@ -75,10 +75,10 @@ export default function AdminScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, Shadows.card]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} accessibilityLabel="Close admin dashboard">
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} accessibilityLabel="Close admin dashboard" accessibilityRole="button">
           <Ionicons name="close" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
-        <Text style={styles.title}>Admin Dashboard</Text>
+        <Text style={styles.title} accessibilityRole="header">Admin Dashboard</Text>
         <View style={styles.closeBtn} />
       </View>
 
@@ -98,7 +98,7 @@ export default function AdminScreen() {
               secureTextEntry
               autoCapitalize="none"
             />
-            <TouchableOpacity onPress={handleSaveKey} style={styles.saveBtn} accessibilityLabel="Save admin key">
+            <TouchableOpacity onPress={handleSaveKey} style={styles.saveBtn} accessibilityLabel="Save admin key" accessibilityRole="button">
               <Ionicons name="checkmark" size={18} color="#FFF" />
             </TouchableOpacity>
           </View>

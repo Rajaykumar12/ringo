@@ -15,6 +15,8 @@ import * as Clipboard from 'expo-clipboard';
 import Markdown from 'react-native-markdown-display';
 import { Message } from '@/services/api';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { StreamingLiveRegion } from '@/components/streaming-live-region';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -46,6 +48,7 @@ function SpringPressable({ onPress, style, children, accessibilityLabel }: {
       onPress={onPress}
       style={[style, animStyle]}
       accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
     >
       {children}
     </AnimatedPressable>
@@ -67,6 +70,7 @@ export function ChatMessages({
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const markdownStyles = React.useMemo(() => createMarkdownStyles(Colors), [Colors]);
+  const { t } = useTranslation();
   const scrollViewRef = React.useRef<ScrollView>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
@@ -131,13 +135,16 @@ export function ChatMessages({
                     {message.text || (isUser ? '' : '…')}
                   </Text>
                 ) : (
-                  <Markdown style={markdownStyles}>{message.text}</Markdown>
+                  <>
+                    <Markdown style={markdownStyles}>{message.text}</Markdown>
+                    <StreamingLiveRegion text={message.text} active={isLastAI && isLoading} />
+                  </>
                 )}
 
                 {message.isAudio && (
                   <View style={styles.audioLabel}>
                     <Ionicons name="mic" size={10} color={isUser ? 'rgba(255,255,255,0.7)' : Colors.textMuted} />
-                    <Text style={[styles.audioLabelText, isUser && styles.audioLabelTextUser]}>Voice</Text>
+                    <Text style={[styles.audioLabelText, isUser && styles.audioLabelTextUser]}>{t('chat.voiceLabel')}</Text>
                   </View>
                 )}
 
@@ -151,7 +158,8 @@ export function ChatMessages({
                   <Pressable
                     onPress={() => handleCopy(message)}
                     style={styles.actionIcon}
-                    accessibilityLabel="Copy message"
+                    accessibilityLabel={t('chat.copyMessage')}
+                    accessibilityRole="button"
                   >
                     <Ionicons
                       name={copiedId === message.id ? 'checkmark' : 'copy-outline'}
@@ -164,7 +172,8 @@ export function ChatMessages({
                     <Pressable
                       onPress={() => onEditMessage(message)}
                       style={styles.actionIcon}
-                      accessibilityLabel="Edit and resend message"
+                      accessibilityLabel={t('chat.editMessage')}
+                      accessibilityRole="button"
                     >
                       <Ionicons name="pencil-outline" size={12} color={Colors.textFaint} />
                     </Pressable>
@@ -174,7 +183,8 @@ export function ChatMessages({
                     <Pressable
                       onPress={() => onRegenerate(message)}
                       style={styles.actionIcon}
-                      accessibilityLabel="Regenerate response"
+                      accessibilityLabel={t('chat.regenerate')}
+                      accessibilityRole="button"
                     >
                       <Ionicons name="refresh-outline" size={12} color={Colors.textFaint} />
                     </Pressable>
@@ -188,7 +198,7 @@ export function ChatMessages({
               <SpringPressable
                 onPress={() => handleAudioButtonPress(message)}
                 style={[styles.audioBtn, Shadows.card]}
-                accessibilityLabel={isPlayingThis && isPlaying ? 'Pause audio' : 'Play audio'}
+                accessibilityLabel={isPlayingThis && isPlaying ? t('chat.pauseAudio') : t('chat.playAudio')}
               >
                 {isGeneratingTTS && isPlayingThis ? (
                   <ActivityIndicator size="small" color="#FFF" />

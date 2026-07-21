@@ -1,0 +1,111 @@
+{
+  "app": {
+    "title": "AI Chat",
+    "menu": "Menu",
+    "initializing": "System initializing...",
+    "ready": "Ready",
+    "readyNoDocuments": "System ready (no documents indexed)",
+    "backendUnavailable": "Backend unavailable — check your connection"
+  },
+  "common": {
+    "error": "Error",
+    "cancel": "Cancel",
+    "remove": "Remove",
+    "tryAgain": "Try Again"
+  },
+  "offline": {
+    "banner": "You're offline",
+    "title": "You're offline",
+    "message": "Reconnect and try again."
+  },
+  "chat": {
+    "placeholder": "Ask anything…",
+    "sendTextError": "Failed to send message. Check your connection and API URL.",
+    "sendAudioError": "Failed to send audio. Check your connection and API URL.",
+    "voiceMessage": "Voice message",
+    "voiceLabel": "Voice",
+    "attachImage": "Attach image",
+    "removeAttachedImage": "Remove attached image",
+    "stopGenerating": "Stop generating",
+    "copyMessage": "Copy message",
+    "editMessage": "Edit and resend message",
+    "regenerate": "Regenerate response",
+    "playAudio": "Play audio",
+    "pauseAudio": "Pause audio"
+  },
+  "permissions": {
+    "title": "Permission Required",
+    "microphone": "Please grant microphone permission"
+  },
+  "recording": {
+    "limitTitle": "Recording Limit Reached",
+    "limitMessage": "Maximum recording length is 2 minutes.",
+    "startError": "Failed to start recording",
+    "noAudio": "No audio recorded"
+  },
+  "audio": {
+    "generateError": "Failed to generate audio",
+    "playError": "Failed to play audio"
+  },
+  "documents": {
+    "title": "Documents",
+    "close": "Close documents panel",
+    "subtitle": "Upload PDFs, PowerPoints, or Markdown to expand the knowledge base.",
+    "upload": "Upload Document",
+    "uploading": "Uploading",
+    "hint": "PDF · PPTX · Markdown — max 20 MB",
+    "loadFailed": "Failed to load documents.",
+    "fileTooLargeTitle": "File Too Large",
+    "fileTooLargeMessage": "\"{filename}\" exceeds the {limit}MB limit.",
+    "uploadFailedTitle": "Upload Failed",
+    "uploadFailedGeneric": "Something went wrong. Please try again.",
+    "removeTitle": "Remove Document",
+    "removeConfirm": "Remove \"{filename}\" from the index?",
+    "deleteFailed": "Delete failed. Please try again.",
+    "emptyTitle": "No documents yet",
+    "emptySub": "Upload a file to get started.",
+    "indexedCount": "{count} documents indexed",
+    "remove": "Remove {filename}"
+  },
+  "conversations": {
+    "title": "Chats",
+    "close": "Close chat history",
+    "newChat": "New Chat",
+    "startNewChat": "Start a new chat",
+    "openChat": "Open chat: {title}",
+    "rename": "Rename {title}",
+    "delete": "Delete {title}",
+    "deleteConfirm": "Delete \"{title}\"?",
+    "messageCount": "{count} messages"
+  },
+  "menu": {
+    "chatHistory": "Chat history",
+    "documents": "Documents",
+    "settings": "Settings"
+  },
+  "language": {
+    "title": "Language",
+    "current": "Language: {name}. Tap to change"
+  },
+  "settings": {
+    "title": "Settings",
+    "close": "Close settings",
+    "appearance": "Appearance",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "defaultLanguage": "Default response language",
+    "uiLanguage": "App language",
+    "responses": "Responses",
+    "streamResponses": "Stream responses",
+    "streamResponsesSub": "Show the AI's reply as it's generated, token by token.",
+    "advanced": "Advanced",
+    "adminDashboard": "Admin dashboard",
+    "adminDashboardSub": "RAG call volume, latency, ratings, eval scores"
+  },
+  "errorBoundary": {
+    "title": "Something went wrong",
+    "message": "An unexpected error occurred. Please try again.",
+    "tryAgain": "Try Again"
+  }
+}

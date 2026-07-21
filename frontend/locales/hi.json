@@ -1,0 +1,111 @@
+{
+  "app": {
+    "title": "एआई चैट",
+    "menu": "मेनू",
+    "initializing": "सिस्टम शुरू हो रहा है...",
+    "ready": "तैयार",
+    "readyNoDocuments": "सिस्टम तैयार है (कोई दस्तावेज़ अनुक्रमित नहीं)",
+    "backendUnavailable": "बैकएंड उपलब्ध नहीं है — अपना कनेक्शन जांचें"
+  },
+  "common": {
+    "error": "त्रुटि",
+    "cancel": "रद्द करें",
+    "remove": "हटाएं",
+    "tryAgain": "पुनः प्रयास करें"
+  },
+  "offline": {
+    "banner": "आप ऑफ़लाइन हैं",
+    "title": "आप ऑफ़लाइन हैं",
+    "message": "पुनः कनेक्ट करें और फिर से प्रयास करें।"
+  },
+  "chat": {
+    "placeholder": "कुछ भी पूछें…",
+    "sendTextError": "संदेश भेजने में विफल। अपना कनेक्शन और API URL जांचें।",
+    "sendAudioError": "ऑडियो भेजने में विफल। अपना कनेक्शन और API URL जांचें।",
+    "voiceMessage": "ध्वनि संदेश",
+    "voiceLabel": "आवाज़",
+    "attachImage": "छवि संलग्न करें",
+    "removeAttachedImage": "संलग्न छवि हटाएं",
+    "stopGenerating": "रोकें",
+    "copyMessage": "संदेश कॉपी करें",
+    "editMessage": "संपादित करें और फिर से भेजें",
+    "regenerate": "प्रतिक्रिया पुनः बनाएं",
+    "playAudio": "ऑडियो चलाएं",
+    "pauseAudio": "ऑडियो रोकें"
+  },
+  "permissions": {
+    "title": "अनुमति आवश्यक",
+    "microphone": "कृपया माइक्रोफ़ोन की अनुमति दें"
+  },
+  "recording": {
+    "limitTitle": "रिकॉर्डिंग सीमा पूरी हुई",
+    "limitMessage": "अधिकतम रिकॉर्डिंग लंबाई 2 मिनट है।",
+    "startError": "रिकॉर्डिंग शुरू करने में विफल",
+    "noAudio": "कोई ऑडियो रिकॉर्ड नहीं हुआ"
+  },
+  "audio": {
+    "generateError": "ऑडियो बनाने में विफल",
+    "playError": "ऑडियो चलाने में विफल"
+  },
+  "documents": {
+    "title": "दस्तावेज़",
+    "close": "दस्तावेज़ पैनल बंद करें",
+    "subtitle": "ज्ञान आधार बढ़ाने के लिए PDF, PowerPoint या Markdown अपलोड करें।",
+    "upload": "दस्तावेज़ अपलोड करें",
+    "uploading": "अपलोड हो रहा है",
+    "hint": "PDF · PPTX · Markdown — अधिकतम 20 MB",
+    "loadFailed": "दस्तावेज़ लोड करने में विफल।",
+    "fileTooLargeTitle": "फ़ाइल बहुत बड़ी है",
+    "fileTooLargeMessage": "\"{filename}\" {limit}MB की सीमा से अधिक है।",
+    "uploadFailedTitle": "अपलोड विफल",
+    "uploadFailedGeneric": "कुछ गलत हो गया। कृपया फिर से प्रयास करें।",
+    "removeTitle": "दस्तावेज़ हटाएं",
+    "removeConfirm": "\"{filename}\" को इंडेक्स से हटाएं?",
+    "deleteFailed": "हटाना विफल रहा। कृपया फिर से प्रयास करें।",
+    "emptyTitle": "अभी तक कोई दस्तावेज़ नहीं",
+    "emptySub": "शुरू करने के लिए एक फ़ाइल अपलोड करें।",
+    "indexedCount": "{count} दस्तावेज़ अनुक्रमित",
+    "remove": "{filename} हटाएं"
+  },
+  "conversations": {
+    "title": "चैट",
+    "close": "चैट इतिहास बंद करें",
+    "newChat": "नई चैट",
+    "startNewChat": "नई चैट शुरू करें",
+    "openChat": "चैट खोलें: {title}",
+    "rename": "{title} का नाम बदलें",
+    "delete": "{title} हटाएं",
+    "deleteConfirm": "\"{title}\" हटाएं?",
+    "messageCount": "{count} संदेश"
+  },
+  "menu": {
+    "chatHistory": "चैट इतिहास",
+    "documents": "दस्तावेज़",
+    "settings": "सेटिंग्स"
+  },
+  "language": {
+    "title": "भाषा",
+    "current": "भाषा: {name}। बदलने के लिए टैप करें"
+  },
+  "settings": {
+    "title": "सेटिंग्स",
+    "close": "सेटिंग्स बंद करें",
+    "appearance": "रूप",
+    "themeSystem": "सिस्टम",
+    "themeLight": "हल्का",
+    "themeDark": "गहरा",
+    "defaultLanguage": "डिफ़ॉल्ट प्रतिक्रिया भाषा",
+    "uiLanguage": "ऐप भाषा",
+    "responses": "प्रतिक्रियाएं",
+    "streamResponses": "प्रतिक्रियाएं स्ट्रीम करें",
+    "streamResponsesSub": "एआई के उत्तर को उत्पन्न होते ही, टोकन दर टोकन दिखाएं।",
+    "advanced": "उन्नत",
+    "adminDashboard": "व्यवस्थापक डैशबोर्ड",
+    "adminDashboardSub": "RAG कॉल वॉल्यूम, विलंबता, रेटिंग, मूल्यांकन स्कोर"
+  },
+  "errorBoundary": {
+    "title": "कुछ गलत हो गया",
+    "message": "एक अप्रत्याशित त्रुटि हुई। कृपया फिर से प्रयास करें।",
+    "tryAgain": "पुनः प्रयास करें"
+  }
+}

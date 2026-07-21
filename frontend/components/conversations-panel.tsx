@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 import { Conversation, useConversations } from '@/hooks/use-conversations';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface ConversationsPanelProps {
   visible: boolean;
@@ -31,6 +32,7 @@ function formatDate(ts: number): string {
 export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { t } = useTranslation();
   const {
     conversations, activeId, createConversation, selectConversation, deleteConversation, renameConversation,
   } = useConversations();
@@ -64,29 +66,29 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
 
   const handleDelete = (c: Conversation) => {
     const confirmed = Platform.OS === 'web'
-      ? window.confirm(`Delete "${c.title}"?`)
+      ? window.confirm(t('conversations.deleteConfirm', { title: c.title }))
       : true; // Alert.alert would require importing Alert; web covers primary target here.
     if (confirmed) deleteConversation(c.id);
   };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} accessibilityViewIsModal>
         <View style={[styles.header, Shadows.card]}>
           <View style={styles.headerTitle}>
             <View style={styles.headerIconWrap}>
               <Ionicons name="chatbubbles" size={18} color={Colors.amber} />
             </View>
-            <Text style={styles.title}>Chats</Text>
+            <Text style={styles.title} accessibilityRole="header">{t('conversations.title')}</Text>
           </View>
-          <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close chat history">
+          <TouchableOpacity onPress={onClose} style={styles.closeBtn} accessibilityLabel={t('conversations.close')} accessibilityRole="button">
             <Ionicons name="close" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.newBtn} onPress={handleNewChat} accessibilityLabel="Start a new chat">
+        <TouchableOpacity style={styles.newBtn} onPress={handleNewChat} accessibilityLabel={t('conversations.startNewChat')} accessibilityRole="button">
           <Ionicons name="add" size={18} color="#FFF" />
-          <Text style={styles.newBtnText}>New Chat</Text>
+          <Text style={styles.newBtnText}>{t('conversations.newChat')}</Text>
         </TouchableOpacity>
 
         <View style={styles.divider} />
@@ -101,7 +103,8 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                   style={styles.convMain}
                   onPress={() => (isEditing ? undefined : handleSelect(c.id))}
                   disabled={isEditing}
-                  accessibilityLabel={`Open chat: ${c.title}`}
+                  accessibilityLabel={t('conversations.openChat', { title: c.title })}
+                  accessibilityRole="button"
                 >
                   {isEditing ? (
                     <TextInput
@@ -117,7 +120,7 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                     <>
                       <Text style={styles.convTitle} numberOfLines={1}>{c.title}</Text>
                       <Text style={styles.convMeta}>
-                        {c.messages.length} message{c.messages.length !== 1 ? 's' : ''} · {formatDate(c.updatedAt)}
+                        {t('conversations.messageCount', { count: c.messages.length })} · {formatDate(c.updatedAt)}
                       </Text>
                     </>
                   )}
@@ -128,14 +131,16 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                     <TouchableOpacity
                       onPress={() => startRename(c)}
                       style={styles.iconBtn}
-                      accessibilityLabel={`Rename ${c.title}`}
+                      accessibilityLabel={t('conversations.rename', { title: c.title })}
+                      accessibilityRole="button"
                     >
                       <Ionicons name="pencil-outline" size={15} color={Colors.textMuted} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleDelete(c)}
                       style={styles.iconBtn}
-                      accessibilityLabel={`Delete ${c.title}`}
+                      accessibilityLabel={t('conversations.delete', { title: c.title })}
+                      accessibilityRole="button"
                     >
                       <Ionicons name="trash-outline" size={15} color={Colors.error} />
                     </TouchableOpacity>

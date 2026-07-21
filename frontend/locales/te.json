@@ -1,0 +1,111 @@
+{
+  "app": {
+    "title": "AI చాట్",
+    "menu": "మెనూ",
+    "initializing": "సిస్టమ్ ప్రారంభమవుతోంది...",
+    "ready": "సిద్ధంగా ఉంది",
+    "readyNoDocuments": "సిస్టమ్ సిద్ధంగా ఉంది (ఏ పత్రాలు సూచీకరించబడలేదు)",
+    "backendUnavailable": "బ్యాకెండ్ అందుబాటులో లేదు — మీ కనెక్షన్‌ని తనిఖీ చేయండి"
+  },
+  "common": {
+    "error": "లోపం",
+    "cancel": "రద్దు చేయి",
+    "remove": "తీసివేయి",
+    "tryAgain": "మళ్ళీ ప్రయత్నించండి"
+  },
+  "offline": {
+    "banner": "మీరు ఆఫ్‌లైన్‌లో ఉన్నారు",
+    "title": "మీరు ఆఫ్‌లైన్‌లో ఉన్నారు",
+    "message": "మళ్ళీ కనెక్ట్ చేసి ప్రయత్నించండి."
+  },
+  "chat": {
+    "placeholder": "ఏదైనా అడగండి…",
+    "sendTextError": "సందేశం పంపడంలో విఫలమైంది. మీ కనెక్షన్ మరియు API URL ని తనిఖీ చేయండి.",
+    "sendAudioError": "ఆడియో పంపడంలో విఫలమైంది. మీ కనెక్షన్ మరియు API URL ని తనిఖీ చేయండి.",
+    "voiceMessage": "వాయిస్ సందేశం",
+    "voiceLabel": "వాయిస్",
+    "attachImage": "చిత్రాన్ని జోడించండి",
+    "removeAttachedImage": "జోడించిన చిత్రాన్ని తీసివేయండి",
+    "stopGenerating": "ఆపు",
+    "copyMessage": "సందేశాన్ని కాపీ చేయండి",
+    "editMessage": "సవరించి మళ్ళీ పంపండి",
+    "regenerate": "ప్రతిస్పందనను మళ్ళీ రూపొందించండి",
+    "playAudio": "ఆడియో ప్లే చేయండి",
+    "pauseAudio": "ఆడియో పాజ్ చేయండి"
+  },
+  "permissions": {
+    "title": "అనుమతి అవసరం",
+    "microphone": "దయచేసి మైక్రోఫోన్ అనుమతి ఇవ్వండి"
+  },
+  "recording": {
+    "limitTitle": "రికార్డింగ్ పరిమితి చేరుకుంది",
+    "limitMessage": "గరిష్ట రికార్డింగ్ నిడివి 2 నిమిషాలు.",
+    "startError": "రికార్డింగ్ ప్రారంభించడంలో విఫలమైంది",
+    "noAudio": "ఏ ఆడియో రికార్డ్ కాలేదు"
+  },
+  "audio": {
+    "generateError": "ఆడియో సృష్టించడంలో విఫలమైంది",
+    "playError": "ఆడియో ప్లే చేయడంలో విఫలమైంది"
+  },
+  "documents": {
+    "title": "పత్రాలు",
+    "close": "పత్రాల ప్యానెల్‌ని మూసివేయండి",
+    "subtitle": "నాలెడ్జ్ బేస్‌ను విస్తరించడానికి PDFలు, PowerPointలు లేదా Markdown అప్‌లోడ్ చేయండి.",
+    "upload": "పత్రాన్ని అప్‌లోడ్ చేయండి",
+    "uploading": "అప్‌లోడ్ అవుతోంది",
+    "hint": "PDF · PPTX · Markdown — గరిష్టంగా 20 MB",
+    "loadFailed": "పత్రాలను లోడ్ చేయడంలో విఫలమైంది.",
+    "fileTooLargeTitle": "ఫైల్ చాలా పెద్దది",
+    "fileTooLargeMessage": "\"{filename}\" {limit}MB పరిమితిని మించిపోయింది.",
+    "uploadFailedTitle": "అప్‌లోడ్ విఫలమైంది",
+    "uploadFailedGeneric": "ఏదో తప్పు జరిగింది. దయచేసి మళ్ళీ ప్రయత్నించండి.",
+    "removeTitle": "పత్రాన్ని తీసివేయండి",
+    "removeConfirm": "\"{filename}\" ని సూచిక నుండి తీసివేయాలా?",
+    "deleteFailed": "తొలగింపు విఫలమైంది. దయచేసి మళ్ళీ ప్రయత్నించండి.",
+    "emptyTitle": "ఇంకా పత్రాలు లేవు",
+    "emptySub": "ప్రారంభించడానికి ఒక ఫైల్‌ను అప్‌లోడ్ చేయండి.",
+    "indexedCount": "{count} పత్రాలు సూచీకరించబడ్డాయి",
+    "remove": "{filename} ని తీసివేయండి"
+  },
+  "conversations": {
+    "title": "చాట్‌లు",
+    "close": "చాట్ చరిత్రను మూసివేయండి",
+    "newChat": "కొత్త చాట్",
+    "startNewChat": "కొత్త చాట్ ప్రారంభించండి",
+    "openChat": "చాట్ తెరవండి: {title}",
+    "rename": "{title} పేరు మార్చండి",
+    "delete": "{title} తొలగించండి",
+    "deleteConfirm": "\"{title}\" ని తొలగించాలా?",
+    "messageCount": "{count} సందేశాలు"
+  },
+  "menu": {
+    "chatHistory": "చాట్ చరిత్ర",
+    "documents": "పత్రాలు",
+    "settings": "సెట్టింగ్‌లు"
+  },
+  "language": {
+    "title": "భాష",
+    "current": "భాష: {name}. మార్చడానికి నొక్కండి"
+  },
+  "settings": {
+    "title": "సెట్టింగ్‌లు",
+    "close": "సెట్టింగ్‌లను మూసివేయండి",
+    "appearance": "రూపం",
+    "themeSystem": "సిస్టమ్",
+    "themeLight": "లైట్",
+    "themeDark": "డార్క్",
+    "defaultLanguage": "డిఫాల్ట్ ప్రతిస్పందన భాష",
+    "uiLanguage": "యాప్ భాష",
+    "responses": "ప్రతిస్పందనలు",
+    "streamResponses": "ప్రతిస్పందనలను స్ట్రీమ్ చేయండి",
+    "streamResponsesSub": "AI సమాధానం రూపొందుతున్నప్పుడే, టోకెన్ బై టోకెన్‌గా చూపించు.",
+    "advanced": "అధునాతన",
+    "adminDashboard": "అడ్మిన్ డాష్‌బోర్డ్",
+    "adminDashboardSub": "RAG కాల్ వాల్యూమ్, లేటెన్సీ, రేటింగ్‌లు, మూల్యాంకన స్కోర్‌లు"
+  },
+  "errorBoundary": {
+    "title": "ఏదో తప్పు జరిగింది",
+    "message": "ఊహించని లోపం సంభవించింది. దయచేసి మళ్ళీ ప్రయత్నించండి.",
+    "tryAgain": "మళ్ళీ ప్రయత్నించండి"
+  }
+}

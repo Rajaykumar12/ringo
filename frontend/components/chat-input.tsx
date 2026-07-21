@@ -11,6 +11,7 @@ import * as ImagePicker from 'expo-image-picker';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { useTranslation } from '@/hooks/use-translation';
 
 export interface AttachedImage {
   uri: string;
@@ -70,6 +71,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [focused, setFocused] = useState(false);
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
@@ -115,7 +117,7 @@ export function ChatInput({
         <AnimatedPressable
           onPress={handleAttachImage}
           style={styles.attachButton}
-          accessibilityLabel="Attach image"
+          accessibilityLabel={t('chat.attachImage')}
           accessibilityRole="button"
         >
           <Ionicons name="image-outline" size={22} color={Colors.textFaint} />
@@ -127,7 +129,7 @@ export function ChatInput({
             <Image source={{ uri: attachedImage.uri }} style={styles.imagePreview} />
             <Pressable
               onPress={() => setAttachedImage(null)}
-              accessibilityLabel="Remove attached image"
+              accessibilityLabel={t('chat.removeAttachedImage')}
               accessibilityRole="button"
               style={styles.removeImageButton}
             >
@@ -137,7 +139,7 @@ export function ChatInput({
         )}
         <TextInput
           style={styles.input}
-          placeholder="Ask anything…"
+          placeholder={t('chat.placeholder')}
           placeholderTextColor={Colors.textFaint}
           value={message}
           onChangeText={setMessage}
@@ -163,7 +165,7 @@ export function ChatInput({
         <AnimatedPressable
           onPress={onStop}
           style={[styles.actionButton, styles.loadingButton]}
-          accessibilityLabel="Stop generating"
+          accessibilityLabel={t('chat.stopGenerating')}
           accessibilityRole="button"
         >
           <Ionicons name="stop" size={18} color={Colors.error} />

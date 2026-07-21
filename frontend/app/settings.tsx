@@ -5,36 +5,41 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 import { useAppSettings, ThemeMode } from '@/hooks/use-app-settings';
-import { LANGUAGES } from '@/components/language-selector';
+import { LANGUAGES, Language } from '@/components/language-selector';
+import { useTranslation } from '@/hooks/use-translation';
 
-const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { mode: 'system', label: 'System', icon: 'phone-portrait-outline' },
-  { mode: 'light', label: 'Light', icon: 'sunny-outline' },
-  { mode: 'dark', label: 'Dark', icon: 'moon-outline' },
-];
+const UI_LANGUAGES = LANGUAGES.filter((l): l is typeof LANGUAGES[number] & { code: Exclude<Language, 'auto'> } => l.code !== 'auto');
 
 export default function SettingsScreen() {
   const router = useRouter();
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { t } = useTranslation();
   const {
     themeMode, setThemeMode,
     defaultLanguage, setDefaultLanguage,
+    uiLanguage, setUiLanguage,
     streamingEnabled, setStreamingEnabled,
   } = useAppSettings();
+
+  const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { mode: 'system', label: t('settings.themeSystem'), icon: 'phone-portrait-outline' },
+    { mode: 'light', label: t('settings.themeLight'), icon: 'sunny-outline' },
+    { mode: 'dark', label: t('settings.themeDark'), icon: 'moon-outline' },
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, Shadows.card]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} accessibilityLabel="Close settings">
+        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} accessibilityLabel={t('settings.close')} accessibilityRole="button">
           <Ionicons name="close" size={20} color={Colors.textMuted} />
         </TouchableOpacity>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={styles.title} accessibilityRole="header">{t('settings.title')}</Text>
         <View style={styles.closeBtn} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionLabel}>Appearance</Text>
+        <Text style={styles.sectionLabel}>{t('settings.appearance')}</Text>
         <View style={styles.card}>
           <View style={styles.segmented}>
             {THEME_OPTIONS.map((opt) => {
@@ -45,6 +50,8 @@ export default function SettingsScreen() {
                   style={[styles.segment, selected && styles.segmentSelected]}
                   onPress={() => setThemeMode(opt.mode)}
                   accessibilityLabel={`Theme: ${opt.label}${selected ? ', selected' : ''}`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
                 >
                   <Ionicons name={opt.icon} size={16} color={selected ? '#FFF' : Colors.textMuted} />
                   <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{opt.label}</Text>
@@ -54,7 +61,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>Default response language</Text>
+        <Text style={styles.sectionLabel}>{t('settings.defaultLanguage')}</Text>
         <View style={styles.card}>
           {LANGUAGES.map((lang) => {
             const selected = defaultLanguage === lang.code;
@@ -64,6 +71,8 @@ export default function SettingsScreen() {
                 style={[styles.row, selected && styles.rowSelected]}
                 onPress={() => setDefaultLanguage(lang.code)}
                 accessibilityLabel={`${lang.name}${selected ? ', selected' : ''}`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
               >
                 <Text style={styles.rowCode}>{lang.shortCode}</Text>
                 <View style={styles.rowText}>
@@ -76,12 +85,36 @@ export default function SettingsScreen() {
           })}
         </View>
 
-        <Text style={styles.sectionLabel}>Responses</Text>
+        <Text style={styles.sectionLabel}>{t('settings.uiLanguage')}</Text>
+        <View style={styles.card}>
+          {UI_LANGUAGES.map((lang) => {
+            const selected = uiLanguage === lang.code;
+            return (
+              <TouchableOpacity
+                key={lang.code}
+                style={[styles.row, selected && styles.rowSelected]}
+                onPress={() => setUiLanguage(lang.code)}
+                accessibilityLabel={`${lang.name}${selected ? ', selected' : ''}`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+              >
+                <Text style={styles.rowCode}>{lang.shortCode}</Text>
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowName, selected && styles.rowNameSelected]}>{lang.nativeName}</Text>
+                  <Text style={styles.rowSub}>{lang.name}</Text>
+                </View>
+                {selected && <Ionicons name="checkmark" size={16} color={Colors.amber} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={styles.sectionLabel}>{t('settings.responses')}</Text>
         <View style={styles.card}>
           <View style={styles.switchRow}>
             <View style={styles.switchLabelWrap}>
-              <Text style={styles.switchLabel}>Stream responses</Text>
-              <Text style={styles.switchSub}>Show the AI&apos;s reply as it&apos;s generated, token by token.</Text>
+              <Text style={styles.switchLabel}>{t('settings.streamResponses')}</Text>
+              <Text style={styles.switchSub}>{t('settings.streamResponsesSub')}</Text>
             </View>
             <Switch
               value={streamingEnabled}
@@ -91,17 +124,18 @@ export default function SettingsScreen() {
             />
           </View>
         </View>
-        <Text style={styles.sectionLabel}>Advanced</Text>
+        <Text style={styles.sectionLabel}>{t('settings.advanced')}</Text>
         <View style={styles.card}>
           <TouchableOpacity
             style={styles.row}
             onPress={() => router.push('/admin')}
-            accessibilityLabel="Admin dashboard"
+            accessibilityLabel={t('settings.adminDashboard')}
+            accessibilityRole="button"
           >
             <Ionicons name="stats-chart-outline" size={18} color={Colors.textMuted} />
             <View style={styles.rowText}>
-              <Text style={styles.rowName}>Admin dashboard</Text>
-              <Text style={styles.rowSub}>RAG call volume, latency, ratings, eval scores</Text>
+              <Text style={styles.rowName}>{t('settings.adminDashboard')}</Text>
+              <Text style={styles.rowSub}>{t('settings.adminDashboardSub')}</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={Colors.textFaint} />
           </TouchableOpacity>

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface HeaderMenuProps {
   visible: boolean;
@@ -27,23 +28,25 @@ export function HeaderMenu({
 }: HeaderMenuProps) {
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
+  const { t } = useTranslation();
 
   const items: { label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void }[] = [
-    { label: 'Chat history', icon: 'chatbubbles-outline', onPress: onSelectHistory },
-    { label: 'Documents', icon: 'folder-open-outline', onPress: onSelectDocuments },
-    { label: 'Settings', icon: 'settings-outline', onPress: onSelectSettings },
+    { label: t('menu.chatHistory'), icon: 'chatbubbles-outline', onPress: onSelectHistory },
+    { label: t('menu.documents'), icon: 'folder-open-outline', onPress: onSelectDocuments },
+    { label: t('menu.settings'), icon: 'settings-outline', onPress: onSelectSettings },
   ];
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.overlay} onPress={onClose}>
-        <View style={[styles.menu, Shadows.float]}>
+        <View style={[styles.menu, Shadows.float]} accessibilityViewIsModal accessibilityRole="menu">
           {items.map((item) => (
             <TouchableOpacity
               key={item.label}
               style={styles.row}
               onPress={() => { item.onPress(); onClose(); }}
               accessibilityLabel={item.label}
+              accessibilityRole="menuitem"
             >
               <Ionicons name={item.icon} size={17} color={Colors.textMuted} />
               <Text style={styles.rowText}>{item.label}</Text>
