@@ -15,6 +15,8 @@ import { useRouter } from 'expo-router';
 import { Radii, Shadows, useThemeColors } from '@/constants/theme';
 import { useAppSettings } from '@/hooks/use-app-settings';
 import { useConversations } from '@/hooks/use-conversations';
+import { useNetworkStatus } from '@/hooks/use-network-status';
+import { useTranslation } from '@/hooks/use-translation';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 import { ChatMessages } from '@/components/chat-messages';
@@ -23,13 +25,15 @@ import { LanguageSelector, Language } from '@/components/language-selector';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { ConversationsPanel } from '@/components/conversations-panel';
 import { HeaderMenu } from '@/components/header-menu';
-import { Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, sendImageMessage, AudioChatResponse, generateTTS } from '@/services/api';
+import { API_BASE_URL, Message, sendTextMessage, sendTextMessageStream, sendAudioMessage, sendImageMessage, AudioChatResponse, generateTTS, OfflineError } from '@/services/api';
 
 export default function ChatScreen() {
   const router = useRouter();
   const Colors = useThemeColors();
   const styles = React.useMemo(() => createStyles(Colors), [Colors]);
   const { defaultLanguage, streamingEnabled, loaded: settingsLoaded } = useAppSettings();
+  const { isOnline } = useNetworkStatus();
+  const { t } = useTranslation();
   const {
     activeId, activeConversation, loaded: conversationsLoaded, updateActiveMessages,
   } = useConversations();
@@ -55,7 +59,7 @@ export default function ChatScreen() {
   const [showHistory, setShowHistory] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [initStatus, setInitStatus] = useState('System initializing...');
+  const [initStatus, setInitStatus] = useState(t('app.initializing'));
   const [editingText, setEditingText] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -74,18 +78,16 @@ export default function ChatScreen() {
 
   useEffect(() => {
     const checkHealth = async () => {
-      const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
-      const API_URL = process.env.EXPO_PUBLIC_API_URL || PRODUCTION_API_URL;
       try {
-        const res = await fetch(`${API_URL}/health`, { signal: AbortSignal.timeout(10000) });
+        const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(10000) });
         const data = await res.json();
         if (data.vector_store === 'ready') {
-          setInitStatus('Ready');
+          setInitStatus(t('app.ready'));
         } else {
-          setInitStatus('System ready (no documents indexed)');
+          setInitStatus(t('app.readyNoDocuments'));
         }
       } catch {
-        setInitStatus('Backend unavailable — check your connection');
+        setInitStatus(t('app.backendUnavailable'));
       } finally {
         setIsInitializing(false);
       }
@@ -114,7 +116,7 @@ export default function ChatScreen() {
           audioData = ttsResponse.audio_data || undefined;
 
           if (!audioData) {
-            Alert.alert('Error', 'Failed to generate audio');
+            Alert.alert(t('common.error'), t('audio.generateError'));
             setIsGeneratingTTS(false);
             setPlayingMessageId(null);
             return;
@@ -128,7 +130,7 @@ export default function ChatScreen() {
           ));
         } catch (error) {
           console.error('TTS generation failed:', error);
-          Alert.alert('Error', 'Failed to generate audio');
+          Alert.alert(t('common.error'), t('audio.generateError'));
           setIsGeneratingTTS(false);
           setPlayingMessageId(null);
           return;
@@ -173,7 +175,7 @@ export default function ChatScreen() {
       });
     } catch (error) {
       console.error('Error playing audio:', error);
-      Alert.alert('Error', 'Failed to play audio');
+      Alert.alert(t('common.error'), t('audio.playError'));
       setIsGeneratingTTS(false);
     }
   };
@@ -213,6 +215,9 @@ export default function ChatScreen() {
     abortControllerRef.current = controller;
 
     try {
+      if (!isOnline) {
+        throw new OfflineError();
+      }
       if (options?.image) {
         const response = await sendImageMessage(
           options.image.uri, text, options.image.mimeType, sessionId, controller.signal
@@ -302,7 +307,11 @@ export default function ChatScreen() {
       const wasStopped = error?.name === 'AbortError' || error?.code === 'ERR_CANCELED';
       if (!wasStopped) {
         console.error('Error sending text:', error);
-        Alert.alert('Error', 'Failed to send message. Check your connection and API URL.');
+        if (error instanceof OfflineError || !isOnline) {
+          Alert.alert(t('offline.title'), t('offline.message'));
+        } else {
+          Alert.alert(t('common.error'), t('chat.sendTextError'));
+        }
       }
     } finally {
       setIsLoading(false);
@@ -353,7 +362,7 @@ export default function ChatScreen() {
     try {
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
-        Alert.alert('Permission Required', 'Please grant microphone permission');
+        Alert.alert(t('permissions.title'), t('permissions.microphone'));
         return;
       }
 
@@ -369,12 +378,12 @@ export default function ChatScreen() {
       setIsRecording(true);
 
       recordingTimeoutRef.current = setTimeout(() => {
-        Alert.alert('Recording Limit Reached', 'Maximum recording length is 2 minutes.');
+        Alert.alert(t('recording.limitTitle'), t('recording.limitMessage'));
         stopRecordingAndSend();
       }, MAX_RECORDING_MS);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      Alert.alert('Error', 'Failed to start recording');
+      Alert.alert(t('common.error'), t('recording.startError'));
     }
   };
 
@@ -394,13 +403,13 @@ export default function ChatScreen() {
       const uri = recording.getURI();
 
       if (!uri) {
-        Alert.alert('Error', 'No audio recorded');
+        Alert.alert(t('common.error'), t('recording.noAudio'));
         return;
       }
 
       const userMessage: Message = {
         id: Date.now().toString(),
-        text: 'Voice message',
+        text: t('chat.voiceMessage'),
         sender: 'user',
         timestamp: new Date(),
         isAudio: true,
@@ -434,7 +443,11 @@ export default function ChatScreen() {
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error sending audio:', error);
-      Alert.alert('Error', 'Failed to send audio. Check your connection and API URL.');
+      if (error instanceof OfflineError || !isOnline) {
+        Alert.alert(t('offline.title'), t('offline.message'));
+      } else {
+        Alert.alert(t('common.error'), t('chat.sendAudioError'));
+      }
     } finally {
       setIsLoading(false);
       setRecording(null);
@@ -472,18 +485,26 @@ export default function ChatScreen() {
           <TouchableOpacity
             onPress={() => setShowMenu(true)}
             style={styles.iconBtn}
-            accessibilityLabel="Menu"
+            accessibilityLabel={t('app.menu')}
+            accessibilityRole="button"
           >
             <Ionicons name="menu-outline" size={18} color={Colors.amber} />
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.title}>AI Chat</Text>
+        <Text style={styles.title}>{t('app.title')}</Text>
 
         <View style={styles.headerControls}>
           <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
         </View>
       </View>
+
+      {!isOnline && (
+        <View style={styles.offlineBanner} accessibilityLiveRegion="polite">
+          <Ionicons name="cloud-offline-outline" size={14} color={Colors.textMuted} />
+          <Text style={styles.offlineBannerText}>{t('offline.banner')}</Text>
+        </View>
+      )}
 
       <KeyboardAvoidingView
         style={styles.chatContainer}
@@ -549,6 +570,18 @@ const createStyles = (Colors: ReturnType<typeof useThemeColors>) => StyleSheet.c
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: Colors.surface,
+  },
+  offlineBannerText: {
+    fontSize: 12,
+    color: Colors.textMuted,
   },
   chatContainer: { flex: 1 },
   initContainer: {

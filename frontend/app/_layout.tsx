@@ -9,14 +9,22 @@ import { Ionicons } from '@expo/vector-icons';
 import { Radii, useThemeColors } from '@/constants/theme';
 import { SettingsProvider, useAppSettings } from '@/hooks/use-app-settings';
 import { ConversationsProvider } from '@/hooks/use-conversations';
+import { NetworkStatusProvider } from '@/hooks/use-network-status';
+import { useTranslation } from '@/hooks/use-translation';
 
 interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<typeof useThemeColors> }, ErrorBoundaryState> {
-  constructor(props: { children: ReactNode; colors: ReturnType<typeof useThemeColors> }) {
+type ErrorBoundaryProps = {
+  children: ReactNode;
+  colors: ReturnType<typeof useThemeColors>;
+  t: (key: string) => string;
+};
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
@@ -32,19 +40,21 @@ class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<
   render() {
     if (this.state.hasError) {
       const styles = createStyles(this.props.colors);
+      const { t } = this.props;
       return (
         <View style={styles.container}>
           <View style={styles.iconWrap}>
             <Ionicons name="alert-circle-outline" size={32} color={this.props.colors.amber} />
           </View>
-          <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>An unexpected error occurred. Please try again.</Text>
+          <Text style={styles.title}>{t('errorBoundary.title')}</Text>
+          <Text style={styles.message}>{t('errorBoundary.message')}</Text>
           <TouchableOpacity
             style={styles.button}
             onPress={() => this.setState({ hasError: false, error: null })}
-            accessibilityLabel="Try again"
+            accessibilityLabel={t('errorBoundary.tryAgain')}
+            accessibilityRole="button"
           >
-            <Text style={styles.buttonText}>Try Again</Text>
+            <Text style={styles.buttonText}>{t('errorBoundary.tryAgain')}</Text>
           </TouchableOpacity>
         </View>
       );
@@ -56,9 +66,11 @@ class ErrorBoundary extends Component<{ children: ReactNode; colors: ReturnType<
 export default function RootLayout() {
   return (
     <SettingsProvider>
-      <ConversationsProvider>
-        <RootLayoutInner />
-      </ConversationsProvider>
+      <NetworkStatusProvider>
+        <ConversationsProvider>
+          <RootLayoutInner />
+        </ConversationsProvider>
+      </NetworkStatusProvider>
     </SettingsProvider>
   );
 }
@@ -66,9 +78,10 @@ export default function RootLayout() {
 function RootLayoutInner() {
   const { effectiveScheme } = useAppSettings();
   const colors = useThemeColors();
+  const { t } = useTranslation();
 
   return (
-    <ErrorBoundary colors={colors}>
+    <ErrorBoundary colors={colors} t={t}>
       <ThemeProvider value={effectiveScheme === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="index" options={{ headerShown: false }} />
