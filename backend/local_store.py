@@ -1,8 +1,6 @@
 """
-local_store.py — SQLite fallback for RAG call logs when Azure Table Storage isn't
-configured (e.g. local dev, AZURE_STORAGE_CONNECTION_STRING unset). Mirrors the
-'raglogs' schema used by rag_logger.py/admin.py so admin.py's read path works the
-same regardless of which backing store is active.
+local_store.py — SQLite-backed store for RAG call logs, read by admin.py for the
+admin dashboard and written by rag_logger.py after every chat call.
 """
 import os
 import sqlite3
