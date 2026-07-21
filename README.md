@@ -19,8 +19,10 @@ This project delivers a robust AI chat experience with multilingual support, lev
 - **edge-tts** for high-quality TTS generation
 - **Redis** for persistent conversation memory
 
-Frontend: **Expo (React Native)** — Web, iOS, Android  
+Frontend: **Vite + React + TypeScript** (web)  
 Backend: **FastAPI**
+
+Fully self-hostable: no cloud vendor lock-in — documents live on local disk, analytics in a local SQLite file, sessions in Redis (or an in-memory fallback).
 
 ---
 
@@ -34,12 +36,12 @@ Backend: **FastAPI**
 - **LaTeX Normalization** — Regex-based math notation conversion before embedding
 - **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
 - **Source Preview** — Inspect the exact document chunks used to generate each answer
-- **Document Management** — Upload, list, and delete documents via API; persisted to Azure Blob or local folder
+- **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production)
 - **Conversation Memory** — Redis-backed session history with in-memory fallback
 - **Multilingual** — English, Hindi, Tamil, and Telugu
 - **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
 - **Rate Limiting** — 10 req/min on chat endpoints, 2 req/min on uploads (slowapi)
-- **Analytics** — Query, response, sources, latency logged to Azure Table Storage
+- **Analytics** — Query, response, sources, latency logged to a local SQLite store, readable from the admin dashboard
 
 ---
 
@@ -80,6 +82,7 @@ PDF / PPTX / MD
 
 ```bash
 # Full stack with Docker (recommended)
+cp backend/.env.example backend/.env   # add your GROQ_API_KEY
 docker compose up --build
 # Backend: http://localhost:8000
 # Frontend: http://localhost:8081
@@ -93,7 +96,7 @@ python main.py
 # Frontend only
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 ### System dependencies (for OCR)
@@ -116,19 +119,22 @@ OCR is optional — the system falls back gracefully if Tesseract is not install
 |---|---|---|---|
 | `GROQ_API_KEY` | Yes | — | Groq API key for Llama 3.3-70B |
 | `REDIS_URL` | No | `redis://localhost:6379` | Session memory (falls back to in-memory) |
-| `AZURE_STORAGE_CONNECTION_STRING` | No | — | Enables Azure Blob document sync + Table Storage logging |
-| `AZURE_STORAGE_CONTAINER_NAME` | No | `documents` | Blob container name |
-| `ALLOWED_ORIGINS` | No | `localhost:8081,8080,19006` | Comma-separated CORS origins |
+| `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins — set to your frontend's deployed origin(s) |
+| `ALLOWED_ORIGIN_REGEX` | No | — | Regex alternative/addition to `ALLOWED_ORIGINS` |
+| `ADMIN_API_KEY` | Yes | — | Required to access `/admin/*` routes |
+| `LOCAL_LOGS_DB_PATH` | No | `backend/data/rag_logs.db` | Where analytics are stored (SQLite) |
 | `MAX_MESSAGE_LENGTH` | No | `1000` | Max chat message characters |
 | `MAX_AUDIO_SIZE_MB` | No | `10` | Max audio upload size |
 | `MAX_DOCUMENT_SIZE_MB` | No | `20` | Max document upload size |
+
+Frontend build-time variable: `VITE_API_URL` — set to your backend's URL (`frontend/.env.local` for dev, or as a Docker build arg).
 
 ---
 
 ## Project Structure
 
 ```
-ADK/
+ringo/
 ├── backend/
 │   ├── main.py              # FastAPI server, rate limiting, all endpoints
 │   ├── pipeline.py          # Y-shaped pipeline orchestrator
@@ -136,24 +142,22 @@ ADK/
 │   ├── vectorstore.py       # PyMuPDF, OCR, BM25+semantic hybrid retrieval
 │   ├── latex_utils.py       # LaTeX/math notation normalization
 │   ├── memory.py            # Redis / in-memory conversation history
-│   ├── blob_sync.py         # Azure Blob Storage sync, upload, delete
-│   ├── rag_logger.py        # Azure Table Storage analytics logging
+│   ├── document_store.py    # Local filesystem document storage (upload/delete)
+│   ├── rag_logger.py        # Local SQLite analytics logging
+│   ├── local_store.py       # SQLite backing store for rag_logger.py / admin.py
+│   ├── admin.py             # Admin dashboard read path (stats/logs)
+│   ├── vision.py            # Groq vision-model image chat
 │   ├── requirements.txt
 │   └── documents/           # Knowledge base files (PDF/PPTX/MD)
 │
 ├── frontend/
-│   ├── app/
-│   │   ├── index.tsx        # Main chat screen (streaming toggle, document panel)
-│   │   └── _layout.tsx      # Root layout and error boundary
-│   ├── components/
-│   │   ├── chat-messages.tsx     # Message list, source tags, source preview modal
-│   │   ├── chat-input.tsx        # Animated send/mic/stop input bar
-│   │   ├── language-selector.tsx # Language picker with flag + native name
-│   │   └── documents-panel.tsx   # Document upload/list/delete panel
-│   ├── constants/
-│   │   └── theme.ts         # Design tokens: Colors, Radii, Shadows
-│   └── services/
-│       └── api.ts           # API client with SSE streaming + document endpoints
+│   ├── src/
+│   │   ├── pages/           # ChatPage, SettingsPage, AdminPage (react-router routes)
+│   │   ├── components/      # chat-messages, chat-input, language-selector, documents-panel, ...
+│   │   ├── hooks/           # settings, conversations, network status, i18n, theme
+│   │   ├── services/api.ts  # API client with SSE streaming + document endpoints
+│   │   └── theme.css        # Design tokens as CSS custom properties
+│   └── vite.config.ts
 │
 └── docker-compose.yml
 ```
@@ -172,20 +176,26 @@ ADK/
 | `POST` | `/documents/upload` | Upload and index a document |
 | `DELETE` | `/documents/{filename}` | Delete a document and rebuild index |
 | `GET` | `/documents/chunks` | Fetch chunks for a document (with optional query ranking) |
-| `POST` | `/documents/refresh` | Re-sync from Azure Blob and rebuild vector store |
+| `POST` | `/documents/refresh` | Rebuild the vector store from the local documents folder |
+| `GET` | `/admin/stats` | Aggregate analytics (requires `x-admin-key` header) |
+| `GET` | `/admin/logs` | Recent query logs (requires `x-admin-key` header) |
 
 ---
 
 ## Deployment
 
-Optimized for **Azure Container Apps**:
+Self-hostable on any server with Docker:
 
-- **Azure Blob Storage** — document persistence (`documents` container); local folder fallback for dev
-- **Azure Table Storage** — RAG analytics logging (`raglogs` table)
-- **Azure Cache for Redis** — scalable session memory
-- **Azure Container Registry** — image hosting
+```bash
+docker compose up --build -d
+```
 
-Set `AZURE_STORAGE_CONNECTION_STRING` in the Container App's environment variables to enable all Azure features. Without it, the app runs fully locally.
+- **Documents** — stored under `backend/documents/`, bind-mounted as a volume so uploads survive container restarts
+- **Vector store** — `backend/chroma_db/`, also volume-mounted
+- **Analytics** — local SQLite file (`backend/data/rag_logs.db`), or point `LOCAL_LOGS_DB_PATH` at a mounted volume
+- **Sessions** — Redis (bundled in `docker-compose.yml`), or an in-memory fallback if unavailable
+
+For a production deployment behind a real domain, set `ALLOWED_ORIGINS`/`ALLOWED_ORIGIN_REGEX` on the backend to your frontend's origin, and build the frontend with `VITE_API_URL` pointing at your backend (e.g. `docker build --build-arg VITE_API_URL=https://api.yourdomain.com ./frontend`). Put both containers behind a reverse proxy (nginx/Caddy/Traefik) for TLS.
 
 ---
 
