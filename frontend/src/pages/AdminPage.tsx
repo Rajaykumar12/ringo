@@ -90,7 +90,7 @@ export default function AdminPage() {
         {!!error && <p className={styles.errorText}>{error}</p>}
         {loading && !stats && <div className={styles.spinner} />}
 
-        {stats?.configured && (
+        {stats && (
           <>
             <div className={styles.sectionLabel}>Last 7 days</div>
             <div className={styles.statsGrid}>
@@ -138,11 +138,6 @@ export default function AdminPage() {
           </>
         )}
 
-        {stats && !stats.configured && (
-          <p className={styles.errorText}>
-            Server has no AZURE_STORAGE_CONNECTION_STRING configured — no logs to show.
-          </p>
-        )}
       </div>
     </div>
   );

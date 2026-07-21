@@ -1,12 +1,17 @@
 import axios from 'axios';
 
-// Update this to your backend URL
-// For Azure: set VITE_API_URL env var during docker build
-// For local dev: defaults to localhost:8000 (via import.meta.env.DEV, so it works with zero config)
-const PRODUCTION_API_URL = 'https://adk-backend.yellowocean-31c6616a.centralindia.azurecontainerapps.io';
+// Set VITE_API_URL at build time to point at your backend (see .env.example).
+// Local dev defaults to localhost:8000 with zero config; production build falls back
+// to the page's own origin, which works when the backend is reverse-proxied behind
+// the same host as the frontend.
 const DEV_API_URL = 'http://localhost:8000';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? DEV_API_URL : PRODUCTION_API_URL);
+if (!import.meta.env.VITE_API_URL && !import.meta.env.DEV) {
+  console.warn('VITE_API_URL is not set — falling back to same-origin. Set it at build time to point at your backend.');
+}
+
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? DEV_API_URL : window.location.origin);
 export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 60000, // [High #7] Increased from 30s to 60s for RAG + cold-start
@@ -258,7 +263,6 @@ export const getDocumentChunks = async (
 };
 
 export interface AdminStats {
-  configured: boolean;
   total_calls?: number;
   avg_latency_ms?: number | null;
   thumbs_up?: number;

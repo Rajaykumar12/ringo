@@ -7,7 +7,7 @@ RUN npm ci
 
 COPY . .
 
-# Pass your Azure backend URL here when building for deployment
+# Pass your backend's URL here when building for deployment
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
