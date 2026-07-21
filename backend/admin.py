@@ -1,7 +1,7 @@
 """
 admin.py — Read path for the RAG logs already written by rag_logger.py.
-Azure Table Storage ('raglogs') is write-heavy today with nothing reading it back;
-this adds list/aggregate queries for a minimal admin dashboard.
+Reads from Azure Table Storage ('raglogs') when configured, otherwise from the
+local SQLite fallback (local_store.py) used in local dev.
 """
 import logging
 import os
@@ -27,29 +27,29 @@ def _partition_keys_for_days(days: int) -> List[str]:
     return [(today - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
 
 
-def list_logs(days: int = 1, limit: int = 100) -> List[Dict[str, Any]]:
-    """Most recent log entries across the last `days` partitions, newest first."""
+def _query_entities(days: int) -> List[Dict[str, Any]]:
+    """Fetch raw log entities from whichever backing store is active."""
+    partitions = _partition_keys_for_days(days)
     table = _get_table()
     if table is None:
-        return []
+        from local_store import query_logs
 
-    partitions = _partition_keys_for_days(days)
+        return query_logs(partitions)
+
     filter_expr = " or ".join(f"PartitionKey eq '{pk}'" for pk in partitions)
+    return [dict(e) for e in table.query_entities(filter_expr)]
 
-    entities = list(table.query_entities(filter_expr))
+
+def list_logs(days: int = 1, limit: int = 100) -> List[Dict[str, Any]]:
+    """Most recent log entries across the last `days` partitions, newest first."""
+    entities = _query_entities(days)
     entities.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
-    return [dict(e) for e in entities[:limit]]
+    return entities[:limit]
 
 
 def get_stats(days: int = 7) -> Dict[str, Any]:
     """Aggregate stats over the last `days` days: volume, latency, ratings, eval scores, languages."""
-    table = _get_table()
-    if table is None:
-        return {"configured": False}
-
-    partitions = _partition_keys_for_days(days)
-    filter_expr = " or ".join(f"PartitionKey eq '{pk}'" for pk in partitions)
-    entities = list(table.query_entities(filter_expr))
+    entities = _query_entities(days)
 
     total = len(entities)
     if total == 0:
