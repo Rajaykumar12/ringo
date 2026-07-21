@@ -7,12 +7,18 @@ talk to the vision model directly.
 import base64
 import logging
 import os
+import re
 
 from groq import Groq
 
 logger = logging.getLogger("ringo.vision")
 
-VISION_MODEL = os.environ.get("VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+# qwen/qwen3.6-27b (and other reasoning models) emit a <think>...</think>
+# block ahead of the actual answer — strip it so raw chain-of-thought never
+# reaches the user.
+_THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen/qwen3.6-27b")
 MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", 8))
 
 _client = None
@@ -46,7 +52,8 @@ def describe_image(image_bytes: bytes, mime_type: str, question: str) -> str:
             temperature=0.7,
             max_tokens=1024,
         )
-        return completion.choices[0].message.content
+        content = completion.choices[0].message.content
+        return _THINK_TAG_RE.sub("", content).strip()
     except Exception as e:
         logger.error("Vision model error: %s", e)
         return "Sorry, I couldn't process that image."
