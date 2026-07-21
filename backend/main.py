@@ -18,7 +18,7 @@ from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
 from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
-from blob_sync import upload_document, delete_document
+from document_store import upload_document, delete_document
 from vision import describe_image
 import admin as admin_logs
 
@@ -105,19 +105,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = json.loads(json.dumps(exc.errors(), default=str))
     return JSONResponse(status_code=422, content={"detail": errors})
 
-# CORS configuration — set ALLOWED_ORIGINS env var as comma-separated list.
-# ALLOWED_ORIGIN_REGEX narrows which *.azurecontainerapps.io subdomains are trusted;
-# default only matches this project's "adk-*" app naming, not any tenant on the shared domain.
+# CORS configuration — set ALLOWED_ORIGINS (comma-separated) and/or ALLOWED_ORIGIN_REGEX
+# to your deployed frontend's origin(s) when self-hosting behind a real domain.
 _ALLOWED_ORIGINS_ENV = os.environ.get(
     "ALLOWED_ORIGINS",
-    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://localhost:8080,http://localhost:19006,http://127.0.0.1:8081,http://127.0.0.1:19006"
+    "http://localhost:5173,http://127.0.0.1:5173"
 ).split(",")
 
 ALLOWED_ORIGINS = _ALLOWED_ORIGINS_ENV
-ALLOWED_ORIGIN_REGEX = os.environ.get(
-    "ALLOWED_ORIGIN_REGEX",
-    r"https://adk-[\w-]+\.azurecontainerapps\.io",
-)
+ALLOWED_ORIGIN_REGEX = os.environ.get("ALLOWED_ORIGIN_REGEX")
 logger.info("CORS static origins: %s", ALLOWED_ORIGINS)
 logger.info("CORS origin regex: %s", ALLOWED_ORIGIN_REGEX)
 
