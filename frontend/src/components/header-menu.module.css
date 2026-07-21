@@ -1,0 +1,40 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(17, 24, 39, 0.25);
+  border: none;
+  padding: 0;
+  z-index: 100;
+}
+
+.menu {
+  position: absolute;
+  top: 58px;
+  left: 14px;
+  min-width: 190px;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 6px 0;
+  box-shadow: var(--shadow-float);
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  min-height: 44px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+
+.rowText {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}

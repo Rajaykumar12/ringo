@@ -1,0 +1,268 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(17, 24, 39, 0.35);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.container {
+  width: min(420px, 100%);
+  height: 100%;
+  background-color: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.22s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.headerTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.headerIconWrap {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-amber-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-surface-warm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 14px 16px 4px;
+  margin: 0;
+}
+
+.uploadBtn {
+  margin: 16px 16px 8px;
+  background-color: var(--color-amber);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-float);
+  cursor: pointer;
+}
+
+.uploadBtnDisabled {
+  background-color: var(--color-text-faint);
+  cursor: default;
+}
+
+.uploadBtnInner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uploadBtnText {
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--color-text-faint);
+  margin: 0;
+}
+
+.divider {
+  height: 1px;
+  background-color: var(--color-border);
+  margin-top: 16px;
+}
+
+.centered {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-bottom: 40px;
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-amber);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.errorIconWrap {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-error-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.errorText {
+  color: var(--color-error);
+  font-size: 14px;
+  text-align: center;
+  max-width: 240px;
+  margin: 0;
+}
+
+.retryBtn {
+  padding: 9px 22px;
+  background-color: var(--color-amber);
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+}
+
+.retryBtnText {
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.emptyIconWrap {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-xl);
+  background-color: var(--color-amber-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.emptySub {
+  font-size: 13px;
+  color: var(--color-text-faint);
+  margin: 0;
+}
+
+.list {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.listHeader {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0 0 4px;
+}
+
+.listHeaderDot {
+  color: var(--color-amber);
+}
+
+.docCard {
+  display: flex;
+  align-items: center;
+  background-color: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+}
+
+.docTypeIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.docInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.docName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.docMeta {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.deleteBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.hiddenInput {
+  display: none;
+}

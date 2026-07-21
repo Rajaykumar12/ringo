@@ -1,0 +1,272 @@
+.container {
+  flex: 1;
+  overflow-y: auto;
+  background-color: var(--color-bg);
+}
+
+.content {
+  padding: 16px;
+  padding-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 100%;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 12px;
+  max-width: 88%;
+  gap: 8px;
+}
+
+.rowUser {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.rowAI {
+  align-self: flex-start;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-border-mid);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.bubbleCol {
+  min-width: 0;
+}
+
+.bubble {
+  border-radius: var(--radius-lg);
+  padding: 12px;
+}
+
+.bubbleUser {
+  background-color: var(--color-amber);
+  border-bottom-right-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.bubbleAI {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: var(--radius-sm);
+  box-shadow: var(--shadow-card);
+}
+
+.bubblePlaying {
+  border: 2px solid var(--color-amber-dark);
+}
+
+.bubbleText {
+  font-size: 15px;
+  line-height: 22px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.attachedImage {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: var(--radius-md);
+  margin-bottom: 8px;
+  display: block;
+}
+
+.bubbleTextUser {
+  color: #ffffff;
+}
+
+.bubbleTextAI {
+  color: var(--color-text);
+}
+
+.audioLabel {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.audioLabelText {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.audioLabelTextUser {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.timestamp {
+  font-size: 10px;
+  color: var(--color-text-faint);
+  margin-top: 5px;
+  text-align: right;
+}
+
+.timestampUser {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.actionRow {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+  padding: 0 2px;
+}
+
+.actionRowUser {
+  justify-content: flex-end;
+}
+
+.actionIcon {
+  padding: 3px;
+  opacity: 0.55;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  transition: opacity 0.15s ease;
+}
+
+.actionIcon:hover {
+  opacity: 0.9;
+}
+
+.audioBtn {
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.12s ease;
+}
+
+.audioBtn:active {
+  transform: scale(0.93);
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Markdown content styling */
+.markdown :global(p) {
+  margin: 0 0 6px;
+}
+
+.markdown :global(h1) {
+  font-size: 19px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+}
+
+.markdown :global(h2) {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 4px 0 6px;
+}
+
+.markdown :global(h3) {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 4px 0 4px;
+}
+
+.markdown :global(a) {
+  color: var(--color-teal);
+  text-decoration: underline;
+}
+
+.markdown :global(ul),
+.markdown :global(ol) {
+  margin: 0 0 4px;
+  padding-left: 20px;
+}
+
+.markdown :global(li) {
+  margin-bottom: 2px;
+}
+
+.markdown :global(code) {
+  background-color: var(--color-surface-warm);
+  color: var(--color-text);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.markdown :global(pre) {
+  background-color: var(--color-surface-warm);
+  color: var(--color-text);
+  font-family: SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  margin: 4px 0;
+  overflow-x: auto;
+}
+
+.markdown :global(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.markdown :global(blockquote) {
+  background-color: var(--color-surface-warm);
+  border-left: 3px solid var(--color-amber);
+  padding: 4px 10px;
+  margin: 4px 0;
+}
+
+.markdown :global(table) {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin: 4px 0;
+  border-collapse: collapse;
+}
+
+.markdown :global(th) {
+  padding: 6px;
+  font-weight: 700;
+  background-color: var(--color-surface-warm);
+}
+
+.markdown :global(td) {
+  padding: 6px;
+}
+
+.markdown :global(hr) {
+  background-color: var(--color-border);
+  border: none;
+  height: 1px;
+  margin: 8px 0;
+}

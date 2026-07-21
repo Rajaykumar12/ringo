@@ -1,0 +1,108 @@
+.container {
+  display: flex;
+  padding: 8px 14px 12px;
+  background-color: var(--color-surface);
+  align-items: flex-end;
+  gap: 8px;
+  box-shadow: var(--shadow-float);
+}
+
+.inputWrapper {
+  flex: 1;
+  background-color: var(--color-surface-warm);
+  border-radius: var(--radius-xl);
+  border: 1.5px solid var(--color-border);
+  padding: 10px 16px;
+  max-height: 110px;
+  overflow-y: auto;
+  transition: border-color 0.15s ease;
+}
+
+.inputWrapperFocused {
+  border-color: var(--color-amber);
+}
+
+.attachButton {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s ease;
+}
+
+.attachButton:active {
+  transform: scale(0.92);
+}
+
+.imagePreviewRow {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.imagePreview {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
+}
+
+.removeImageButton {
+  margin-left: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+}
+
+.input {
+  font-size: 15px;
+  color: var(--color-text);
+  min-height: 22px;
+  line-height: 22px;
+  width: 100%;
+  border: none;
+  background: none;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  padding: 0;
+}
+
+.input::placeholder {
+  color: var(--color-text-faint);
+}
+
+.actionButton {
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-float);
+  transition: transform 0.12s ease;
+}
+
+.actionButton:active {
+  transform: scale(0.92);
+}
+
+.loadingButton {
+  background-color: var(--color-surface-warm);
+  box-shadow: none;
+}
+
+.hiddenInput {
+  display: none;
+}
