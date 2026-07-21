@@ -86,11 +86,16 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 13 | Embedding/response caching | Med | Med | Backend | **Done** |
 | 14 | Multimodal image input | Med | Med | Frontend | **Done** |
 | 15 | Admin/analytics dashboard for existing RAG logs | Med | Med | Full-stack | **Done** |
-| 16 | Offline resilience / retry-on-reconnect | Low-Med | Med | Frontend | Pending |
-| 17 | Model routing by query complexity | Low-Med | Med | Backend | Pending |
-| 18 | i18n for UI chrome | Low | Med | Frontend | Pending |
-| 19 | Accessibility improvements | Low | Med | Frontend | Pending |
+| 16 | Offline resilience / retry-on-reconnect | Low-Med | Med | Frontend | **Done** (scope: network detection, retry/backoff, offline UI feedback — full offline message queueing explicitly out of scope, see note below) |
+| 17 | Model routing by query complexity | Low-Med | Med | Backend | **Done** |
+| 18 | i18n for UI chrome | Low | Med | Frontend | **Done** (chat surface + settings; admin dashboard intentionally left English-only as internal/dev-facing) |
+| 19 | Accessibility improvements | Low | Med | Frontend | **Done** (accessibilityRole audit, modal focus/labeling, throttled streaming live-region — dynamic font scaling split out as a follow-up, see below) |
 | 20 | Broader document format support (DOCX/XLSX/CSV/HTML) | Low | Med | Backend | Pending |
 | 21 | Singleton → multi-worker/replica-safe architecture | High* | High | Backend | Pending |
 
 \* High impact only once actual horizontal scaling is needed — not urgent at current single-tenant scale.
+
+**Follow-ups spun out of items 16/19 during implementation:**
+- **Offline message queueing** (compose-while-offline, auto-flush-on-reconnect) — deferred from item 16. This is an Expo Router web target with no background sync, so a queue would mostly benefit a future native build; disproportionate effort for the current web-primary target.
+- **Dynamic font scaling** — deferred from item 19 (Phase 4). Requires introducing a `FontSizes`/`Typography` token system in `constants/theme.ts` and refactoring inlined `fontSize` literals across most components — the largest surface area of any accessibility sub-item, worth its own pass.
+- **hi/ta/te translation review** — item 18's Hindi/Tamil/Telugu UI strings (`frontend/locales/`) are machine-assisted; recommend native-speaker review before considering non-English UI chrome fully "supported."
