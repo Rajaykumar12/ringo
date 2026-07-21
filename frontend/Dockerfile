@@ -8,10 +8,10 @@ RUN npm ci
 COPY . .
 
 # Pass your Azure backend URL here when building for deployment
-ARG EXPO_PUBLIC_API_URL
-ENV EXPO_PUBLIC_API_URL=$EXPO_PUBLIC_API_URL
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
 
-RUN npx expo export --platform web
+RUN npm run build
 
 # Serve with nginx for production
 FROM nginx:alpine
