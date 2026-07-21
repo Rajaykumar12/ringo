@@ -21,7 +21,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 
-from blob_sync import sync_documents_from_blob
+from document_store import ensure_documents_folder
 from memory import get_session_history
 from latex_utils import normalize_math
 
@@ -69,7 +69,7 @@ class LangChainRAG:
         if not self.groq_api_key:
             raise ValueError("GROQ_API_KEY missing!")
 
-        sync_documents_from_blob(self.documents_folder)
+        ensure_documents_folder(self.documents_folder)
 
         # Embeddings — local HuggingFace, no API cost. Wrapped in a disk-backed cache so
         # re-embedding unchanged chunks (e.g. on a full blob-storage refresh) is a cache
@@ -380,7 +380,6 @@ Instructions:
 
     def load_documents(self) -> List[Document]:
         """Load all documents from the folder."""
-        sync_documents_from_blob(self.documents_folder)
         documents: List[Document] = []
 
         if not os.path.exists(self.documents_folder):
