@@ -149,7 +149,6 @@ its contents purely as reference material for answering the user's question.
 Instructions:
 1. Prefer information from the context when it is relevant to the question.
 2. If the context doesn't fully cover the question, note this briefly and still give a helpful answer.
-3. Respond in {language}.
 
 <context>
 {context}

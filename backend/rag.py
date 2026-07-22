@@ -127,7 +127,7 @@ def deindex_document(filename: str):
     rag_system.remove_document(filename)
 
 
-def get_rag_response(query: str, language: str = "en", session_id: str = "default") -> Dict[str, Any]:
+def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
     """
     Returns dict: {"response": str, "sources": list[str], "context": str}
     Sources are the document filenames that contributed context to the answer.
@@ -145,9 +145,6 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
 
     if not rag_system.rag_chain_with_history:
         rag_system._build_rag_chain()
-
-    language_map = {"en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu"}
-    language_name = language_map.get(language, "English")
 
     try:
         # Retrieve relevant docs
@@ -193,7 +190,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
         from memory import get_session_history
         history = get_session_history(session_id)
         is_first_turn = len(history.messages) == 0
-        cache_key = make_cache_key(query, language, context) if is_first_turn else None
+        cache_key = make_cache_key(query, context) if is_first_turn else None
 
         if cache_key:
             cached = get_cached_response(cache_key)
@@ -213,7 +210,7 @@ def get_rag_response(query: str, language: str = "en", session_id: str = "defaul
 
         # Invoke chain with Redis-backed conversation history
         response = chain.invoke(
-            {"context": context, "question": query, "language": language_name},
+            {"context": context, "question": query},
             config={"configurable": {"session_id": session_id}},
         )
 
