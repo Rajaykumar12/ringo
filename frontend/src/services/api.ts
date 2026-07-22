@@ -47,7 +47,6 @@ export interface Message {
   isAudio?: boolean;
   audio_data?: string;
   audio_available?: boolean;
-  language?: string;
   sources?: string[];
   imageUri?: string;
 }
@@ -55,7 +54,6 @@ export interface Message {
 export interface ChatResponse {
   success: boolean;
   response: string;
-  language: string;
   sources?: string[];
   user_transcription?: string;
 }
@@ -63,21 +61,16 @@ export interface ChatResponse {
 export interface AudioChatResponse {
   transcription: string;
   responseText: string;
-  language: string;
 }
 
 export const sendTextMessage = async (
   message: string,
-  language?: string,
   stream: boolean = false,
   session_id: string = 'default',
   signal?: AbortSignal
 ): Promise<ChatResponse> => {
   const formData = new FormData();
   formData.append('message', message);
-  if (language) {
-    formData.append('language', language);
-  }
   formData.append('stream', stream.toString());
   formData.append('session_id', session_id);
 
@@ -88,15 +81,11 @@ export const sendTextMessage = async (
 export const sendTextMessageStream = async (
   message: string,
   onChunk: (chunk: { type: string; value: string; sources?: string[] }) => void,
-  language?: string,
   session_id: string = 'default',
   signal?: AbortSignal
 ): Promise<void> => {
   const formData = new FormData();
   formData.append('message', message);
-  if (language) {
-    formData.append('language', language);
-  }
   formData.append('stream', 'true');
   formData.append('session_id', session_id);
 
@@ -142,7 +131,6 @@ export const sendTextMessageStream = async (
 
 export const sendAudioMessage = async (
   audioUri: string,
-  language?: string,
   stream: boolean = false,
   session_id: string = 'default'
 ): Promise<AudioChatResponse> => {
@@ -153,9 +141,6 @@ export const sendAudioMessage = async (
   const blob = await response.blob();
   formData.append('file', blob, 'audio.webm');
 
-  if (language) {
-    formData.append('language', language);
-  }
   formData.append('stream', stream.toString());
   formData.append('session_id', session_id);
 
@@ -168,7 +153,6 @@ export const sendAudioMessage = async (
   return {
     transcription: data.transcription || '',
     responseText: data.response || '',
-    language: data.language || language || 'en',
   };
 };
 
@@ -270,7 +254,6 @@ export interface AdminStats {
   avg_faithfulness?: number | null;
   avg_answer_relevance?: number | null;
   avg_context_relevance?: number | null;
-  language_breakdown?: Record<string, number>;
 }
 
 export interface AdminLogEntry {
@@ -279,7 +262,6 @@ export interface AdminLogEntry {
   query: string;
   response: string;
   sources: string;
-  language: string;
   latency_ms: number;
   timestamp: string;
   user_rating?: number;
@@ -310,12 +292,10 @@ export const getAdminLogs = async (
 
 // Generate TTS audio on-demand
 export const generateTTS = async (
-  text: string,
-  language: string
+  text: string
 ): Promise<{ audio_data: string | null; audio_available: boolean }> => {
   const formData = new FormData();
   formData.append('text', text);
-  formData.append('language', language);
 
   const response = await api.post('/tts/generate', formData);
   return response.data;
