@@ -70,7 +70,6 @@ The one **live, currently-active gap** was that the admin authentication on docu
 - Source preview (inspect retrieved chunks)
 - Document management (upload/list/delete) with Azure Blob or local-folder persistence
 - Redis-backed conversation memory with in-memory fallback
-- Multilingual support (en/hi/ta/te) via a language selector
 - On-demand TTS via edge-tts, with playback controls
 - Health-check-gated app startup on the frontend
 

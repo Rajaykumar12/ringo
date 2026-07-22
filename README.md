@@ -1,4 +1,4 @@
-# Multilingual AI Chat System
+# AI Chat System
 
 > A fully open-source, cross-platform AI chat application supporting text and voice, built with modern high-performance technologies and a warm, polished mobile UI.
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-This project delivers a robust AI chat experience with multilingual support, leveraging:
+This project delivers a robust AI chat experience, leveraging:
 
 - **Groq (Llama 3.3-70b)** for fast text generation
 - **HuggingFace** (`all-MiniLM-L6-v2`) for local semantic embeddings
@@ -15,7 +15,6 @@ This project delivers a robust AI chat experience with multilingual support, lev
 - **Tesseract OCR** for extracting text from embedded images in documents
 - **BM25 + Semantic hybrid search** via `EnsembleRetriever`
 - **OpenAI Whisper** for local audio transcription
-- **langdetect** for language detection
 - **edge-tts** for high-quality TTS generation
 - **Redis** for persistent conversation memory
 
@@ -38,7 +37,6 @@ Fully self-hostable: no cloud vendor lock-in — documents live on local disk, a
 - **Source Preview** — Inspect the exact document chunks used to generate each answer
 - **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production)
 - **Conversation Memory** — Redis-backed session history with in-memory fallback
-- **Multilingual** — English, Hindi, Tamil, and Telugu
 - **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
 - **Rate Limiting** — 10 req/min on chat endpoints, 2 req/min on uploads (slowapi)
 - **Analytics** — Query, response, sources, latency logged to a local SQLite store, readable from the admin dashboard
@@ -50,7 +48,7 @@ Fully self-hostable: no cloud vendor lock-in — documents live on local disk, a
 ### Backend Pipeline (4-stage Y-shape)
 
 1. **Input Processing** — text preprocessing / Whisper audio transcription
-2. **Query Refinement** — language detection, query formatting
+2. **Query Refinement** — query formatting
 3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search; structure-chunk injection for structural queries; deduplication and metadata-enriched context assembly
 4. **Response Generation** — Groq Llama-3.3-70B via LCEL chain with session history
 
@@ -153,8 +151,8 @@ ringo/
 ├── frontend/
 │   ├── src/
 │   │   ├── pages/           # ChatPage, SettingsPage, AdminPage (react-router routes)
-│   │   ├── components/      # chat-messages, chat-input, language-selector, documents-panel, ...
-│   │   ├── hooks/           # settings, conversations, network status, i18n, theme
+│   │   ├── components/      # chat-messages, chat-input, documents-panel, ...
+│   │   ├── hooks/           # settings, conversations, network status, theme
 │   │   ├── services/api.ts  # API client with SSE streaming + document endpoints
 │   │   └── theme.css        # Design tokens as CSS custom properties
 │   └── vite.config.ts

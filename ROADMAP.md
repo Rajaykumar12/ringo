@@ -42,9 +42,8 @@ None of this is urgent in the way the security findings were — this is a roadm
 | No rich responses | Med | Med | AI responses render as plain RN `<Text>` only — no markdown, code blocks/syntax highlighting, or tables — despite the backend already normalizing LaTeX for embedding quality (`latex_utils.py`), which never reaches the user formatted. |
 | No message actions | Med | Low-Med | No copy-to-clipboard, edit-and-resend, regenerate response, or stop-generation-mid-stream controls anywhere in `chat-messages.tsx`/`chat-input.tsx`. |
 | No multimodal input | Med | Med | No image attach/paste directly into chat despite Groq offering vision-capable Llama models; only the separate document-upload panel exists (PDF/PPTX/MD, not images-as-input). |
-| No settings screen | Low-Med | Low | No user-exposed toggles anywhere for theme, text size, default language persistence, or streaming on/off (streaming is hardcoded `true` in `app/index.tsx`). |
+| No settings screen | Low-Med | Low | No user-exposed toggles anywhere for theme, text size, or streaming on/off (streaming is hardcoded `true` in `app/index.tsx`). |
 | No offline resilience | Low-Med | Med | A dropped connection just throws/logs (`services/api.ts`) — no retry-on-reconnect, no offline message queueing, no network-state detection. |
-| No i18n for UI chrome | Low | Med | Only the AI's *response* language is selectable (en/hi/ta/te) — all buttons, alerts, and placeholders are hardcoded English strings. |
 | No PWA support | Low | Low | The web build (`expo export --platform web`, served by nginx) has no `manifest.json` or service worker — not installable or offline-cacheable despite being a static web app. |
 | Minimal accessibility | Low | Med | A handful of `accessibilityLabel`s exist on icon buttons, but no dynamic font scaling, no screen-reader live regions for streaming text, no focus management. |
 
@@ -59,7 +58,7 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 - **Markdown + code-block rendering with syntax highlighting** for AI responses.
 - **Image input** (paste/attach) leveraging Groq's vision-capable models.
 - **Dark mode toggle** — cheap win given existing scaffolding.
-- **Settings screen** (theme, text size, default language, streaming toggle).
+- **Settings screen** (theme, text size, streaming toggle).
 - **Inline source-chunk highlighting** in the response itself, extending the existing "Source Preview" feature beyond a flat source list.
 - **Export/share a conversation** (markdown or PDF).
 - **Admin/analytics dashboard** surfacing the RAG logs already being collected locally (`rag_logger.py`/`local_store.py`) — currently write-only; nothing reads this data back today.
@@ -88,7 +87,7 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 15 | Admin/analytics dashboard for existing RAG logs | Med | Med | Full-stack | **Done** |
 | 16 | Offline resilience / retry-on-reconnect | Low-Med | Med | Frontend | **Done** (scope: network detection, retry/backoff, offline UI feedback — full offline message queueing explicitly out of scope, see note below) |
 | 17 | Model routing by query complexity | Low-Med | Med | Backend | **Done** |
-| 18 | i18n for UI chrome | Low | Med | Frontend | **Done** (chat surface + settings; admin dashboard intentionally left English-only as internal/dev-facing) |
+| 18 | i18n for UI chrome | Low | Med | Frontend | **Reverted** — multilanguage support (hi/ta/te) was removed; the app is now English-only by design |
 | 19 | Accessibility improvements | Low | Med | Frontend | **Done** (accessibilityRole audit, modal focus/labeling, throttled streaming live-region — dynamic font scaling split out as a follow-up, see below) |
 | 20 | Broader document format support (DOCX/XLSX/CSV/HTML) | Low | Med | Backend | Pending |
 | 21 | Singleton → multi-worker/replica-safe architecture | High* | High | Backend | Pending |
@@ -98,4 +97,3 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 **Follow-ups spun out of items 16/19 during implementation:**
 - **Offline message queueing** (compose-while-offline, auto-flush-on-reconnect) — deferred from item 16. This is an Expo Router web target with no background sync, so a queue would mostly benefit a future native build; disproportionate effort for the current web-primary target.
 - **Dynamic font scaling** — deferred from item 19 (Phase 4). Requires introducing a `FontSizes`/`Typography` token system in `constants/theme.ts` and refactoring inlined `fontSize` literals across most components — the largest surface area of any accessibility sub-item, worth its own pass.
-- **hi/ta/te translation review** — item 18's Hindi/Tamil/Telugu UI strings (`frontend/locales/`) are machine-assisted; recommend native-speaker review before considering non-English UI chrome fully "supported."
