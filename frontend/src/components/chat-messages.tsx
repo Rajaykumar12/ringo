@@ -91,6 +91,14 @@ export function ChatMessages({
                     <img src={message.imageUri} className={styles.attachedImage} alt="" />
                   )}
 
+                  {message.imageUris && message.imageUris.length > 0 && (
+                    <div className={styles.attachedImageGrid}>
+                      {message.imageUris.map((uri) => (
+                        <img key={uri} src={uri} className={styles.attachedImage} alt="" />
+                      ))}
+                    </div>
+                  )}
+
                   {isUser || !message.text ? (
                     <p className={`${styles.bubbleText} ${isUser ? styles.bubbleTextUser : styles.bubbleTextAI}`}>
                       {message.text || (isUser ? '' : '…')}

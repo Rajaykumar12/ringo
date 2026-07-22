@@ -20,6 +20,8 @@ from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from document_store import upload_document, delete_document
 from vision import describe_image
+from image_store import save_image, load_image
+from image_links import record_image_link, get_latest_image_for_session
 import admin as admin_logs
 
 from contextlib import asynccontextmanager
@@ -55,6 +57,57 @@ _refresh_lock = asyncio.Lock()
 def _validate_session_id(session_id: str) -> None:
     if len(session_id) > MAX_SESSION_ID_LENGTH:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
+
+
+MAX_IMAGES_PER_RESPONSE = 4
+
+_IMAGE_REFERENCE_RE = re.compile(
+    r"\b(that|this|the)\s+(image|picture|photo|pic|screenshot)\b", re.IGNORECASE
+)
+
+
+def _references_prior_image(message: str) -> bool:
+    return bool(_IMAGE_REFERENCE_RE.search(message))
+
+
+def _collect_images_from_docs(docs, limit: int = MAX_IMAGES_PER_RESPONSE) -> list:
+    """Dedup image_ids across retrieved chunks' metadata, cap at `limit`, return
+    as /images/{id} URL paths in first-seen order."""
+    seen: list = []
+    for d in docs:
+        raw = (d.metadata or {}).get("image_ids", "")
+        if not raw:
+            continue
+        for img_id in raw.split(","):
+            if img_id and img_id not in seen:
+                seen.append(img_id)
+                if len(seen) >= limit:
+                    return [f"/images/{i}" for i in seen]
+    return [f"/images/{i}" for i in seen]
+
+
+async def _try_image_followup(message: str, session_id: str) -> Optional[dict]:
+    """If the message references a prior image ("that picture", etc.) and this session
+    has a stored upload, answer via the vision model instead of the text RAG chain.
+    Returns a response dict, or None if this turn should fall through to normal RAG."""
+    if not _references_prior_image(message):
+        return None
+    img_id = get_latest_image_for_session(session_id)
+    if not img_id:
+        return None
+    loaded = load_image(img_id)
+    if not loaded:
+        return None
+    img_bytes, mime_type = loaded
+    vision_response = await asyncio.to_thread(describe_image, img_bytes, mime_type, message)
+    try:
+        from memory import get_session_history
+        history = get_session_history(session_id)
+        history.add_user_message(message)
+        history.add_ai_message(vision_response)
+    except Exception as e:
+        logger.warning("Failed to record image-followup turn: %s", e)
+    return {"response": vision_response, "sources": [], "images": [f"/images/{img_id}"]}
 
 
 def _require_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
@@ -222,21 +275,31 @@ async def text_chat(
 
     if stream:
         async def stream_response():
+            image_followup = await _try_image_followup(message, session_id)
+            if image_followup is not None:
+                yield f"data: {json.dumps({'type': 'sources', 'value': []})}\n\n"
+                yield f"data: {json.dumps({'type': 'images', 'value': image_followup['images']})}\n\n"
+                yield f"data: {json.dumps({'type': 'content', 'value': image_followup['response']})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': [], 'images': image_followup['images']})}\n\n"
+                return
+
             if not rag_system:
                 await asyncio.to_thread(initialize_rag)
 
             if not rag_system.vectorstore:
                 yield f"data: {json.dumps({'type': 'content', 'value': 'No documents indexed.'})}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': []})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': [], 'images': []})}\n\n"
                 return
 
             retriever = rag_system.get_retriever()
             docs = await asyncio.to_thread(retriever.invoke, message)
             docs = await asyncio.to_thread(rerank_documents, message, docs)
             sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
+            images = _collect_images_from_docs(docs)
             context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
+            yield f"data: {json.dumps({'type': 'images', 'value': images})}\n\n"
 
             model_tier = pick_model(message, docs, context)
             chain = (
@@ -264,12 +327,16 @@ async def text_chat(
                 None, _eval_and_update, log_id, partition_key, message, context, full_response
             )
             yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources, 'images': images})}\n\n"
 
         return StreamingResponse(stream_response(), media_type="text/event-stream")
 
     # Non-streaming
     try:
+        image_followup = await _try_image_followup(message, session_id)
+        if image_followup is not None:
+            return JSONResponse(content={"success": True, **image_followup})
+
         start = time.time()
         result = await asyncio.to_thread(pipeline.process_text, message, session_id=session_id)
         latency_ms = int((time.time() - start) * 1000)
@@ -322,6 +389,9 @@ async def image_chat(
             describe_image, image_bytes, image.content_type or "image/jpeg", message
         )
 
+        image_id = save_image(image_bytes, image.content_type or "image/jpeg")
+        record_image_link(image_id, session_id, source_type="user_upload")
+
         # Record the exchange in session memory so later text-only turns (which go
         # through the RAG chain's history, not the vision model) can still recall
         # what was in the image — the RAG chain itself never sees the image bytes.
@@ -334,12 +404,23 @@ async def image_chat(
         except Exception as e:
             logger.warning("Failed to record image turn in session memory: %s", e)
 
-        return JSONResponse(content={"response": response, "sources": []})
+        return JSONResponse(content={"response": response, "sources": [], "images": [f"/images/{image_id}"]})
     except HTTPException:
         raise
     except Exception as e:
         logger.error("Error in image_chat: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/images/{image_id}")
+async def get_image(image_id: str):
+    """Serve a stored image (extracted from a RAG document or uploaded in chat)."""
+    from fastapi.responses import Response
+    result = load_image(image_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    data, mime_type = result
+    return Response(content=data, media_type=mime_type)
 
 
 @app.post("/chat/audio")

@@ -12,7 +12,7 @@ import { ConversationsPanel } from '@/components/conversations-panel';
 import { HeaderMenu } from '@/components/header-menu';
 import {
   API_BASE_URL, Message, sendTextMessage, sendTextMessageStream, sendAudioMessage,
-  sendImageMessage, generateTTS, OfflineError,
+  sendImageMessage, generateTTS, OfflineError, toImageUrl,
 } from '@/services/api';
 import styles from './ChatPage.module.css';
 
@@ -203,6 +203,7 @@ export default function ChatPage() {
           text: response.response,
           sender: 'ai',
           timestamp: new Date(),
+          imageUris: response.images?.map(toImageUrl),
         };
         setMessages((prev) => [...prev, aiMessage]);
       } else if (useStreaming) {
@@ -219,11 +220,19 @@ export default function ChatPage() {
 
         await sendTextMessageStream(
           text,
-          (chunk: { type: string; value: string; sources?: string[] }) => {
+          (chunk: { type: string; value: string; sources?: string[]; images?: string[] }) => {
             if (chunk.type === 'sources') {
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === aiMessageId ? { ...msg, sources: chunk.sources ?? [] } : msg
+                )
+              );
+            } else if (chunk.type === 'images') {
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === aiMessageId
+                    ? { ...msg, imageUris: (chunk.images ?? []).map(toImageUrl) }
+                    : msg
                 )
               );
             } else if (chunk.type === 'content') {
@@ -238,6 +247,15 @@ export default function ChatPage() {
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === aiMessageId ? { ...msg, sources: chunk.sources } : msg
+                  )
+                );
+              }
+              if (chunk.images && chunk.images.length > 0) {
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === aiMessageId
+                      ? { ...msg, imageUris: chunk.images!.map(toImageUrl) }
+                      : msg
                   )
                 );
               }
@@ -265,6 +283,7 @@ export default function ChatPage() {
           sender: 'ai',
           timestamp: new Date(),
           sources: response.sources,
+          imageUris: response.images?.map(toImageUrl),
         };
         setMessages((prev) => [...prev, aiMessage]);
       }

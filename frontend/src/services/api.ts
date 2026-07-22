@@ -49,14 +49,21 @@ export interface Message {
   audio_available?: boolean;
   sources?: string[];
   imageUri?: string;
+  imageUris?: string[];
 }
 
 export interface ChatResponse {
   success: boolean;
   response: string;
   sources?: string[];
+  images?: string[];
   user_transcription?: string;
 }
+
+// Backend-served images (RAG document images, persisted chat uploads) are returned as
+// relative /images/{id} paths — resolve against the API origin, not the frontend's.
+export const toImageUrl = (path: string): string =>
+  path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
 
 export interface AudioChatResponse {
   transcription: string;
@@ -80,7 +87,7 @@ export const sendTextMessage = async (
 
 export const sendTextMessageStream = async (
   message: string,
-  onChunk: (chunk: { type: string; value: string; sources?: string[] }) => void,
+  onChunk: (chunk: { type: string; value: string; sources?: string[]; images?: string[] }) => void,
   session_id: string = 'default',
   signal?: AbortSignal
 ): Promise<void> => {
@@ -159,6 +166,7 @@ export const sendAudioMessage = async (
 export interface ImageChatResponse {
   response: string;
   sources?: string[];
+  images?: string[];
 }
 
 export const sendImageMessage = async (

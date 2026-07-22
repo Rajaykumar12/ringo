@@ -78,6 +78,25 @@ def pick_model(query: str, docs: List[Document], context: str, history_len: int 
     return "fast"
 
 
+MAX_RESPONSE_IMAGES = 4
+
+
+def _collect_images(docs: List[Document], limit: int = MAX_RESPONSE_IMAGES) -> List[str]:
+    """Dedup image_ids across retrieved chunks' metadata, cap at `limit`, return
+    as /images/{id} URL paths in first-seen order."""
+    seen: List[str] = []
+    for d in docs:
+        raw = d.metadata.get("image_ids", "")
+        if not raw:
+            continue
+        for img_id in raw.split(","):
+            if img_id and img_id not in seen:
+                seen.append(img_id)
+                if len(seen) >= limit:
+                    return [f"/images/{i}" for i in seen]
+    return [f"/images/{i}" for i in seen]
+
+
 def _format_chunk(doc: Document) -> str:
     meta = doc.metadata
     source = meta.get("source", "Unknown")
@@ -140,6 +159,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
         return {
             "response": "System is running in basic mode (no documents indexed). Please add documents to enable RAG.",
             "sources": [],
+            "images": [],
             "context": "",
         }
 
@@ -181,8 +201,9 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             except Exception as e:
                 logger.warning("Structure injection failed (non-fatal): %s", e)
 
-        # Collect unique source filenames
+        # Collect unique source filenames and any images tied to the retrieved chunks
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
+        images = _collect_images(docs)
         context = "\n\n".join(_format_chunk(d) for d in docs) if docs else "No relevant context found."
 
         # Exact-match response cache — only safe on a session's first turn, since a
@@ -198,7 +219,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
                 logger.info("Response cache hit for first-turn query")
                 history.add_user_message(query)
                 history.add_ai_message(cached)
-                return {"response": cached, "sources": sources, "context": context, "model_tier": "cache"}
+                return {"response": cached, "sources": sources, "images": images, "context": context, "model_tier": "cache"}
 
         # Route to the fast/cheap model tier for short, simple, early-conversation queries
         model_tier = pick_model(query, docs, context, len(history.messages))
@@ -217,8 +238,8 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
         if cache_key:
             set_cached_response(cache_key, response)
 
-        return {"response": response, "sources": sources, "context": context, "model_tier": model_tier}
+        return {"response": response, "sources": sources, "images": images, "context": context, "model_tier": model_tier}
 
     except Exception as e:
         logger.error("RAG Error: %s", e)
-        return {"response": "Error processing request.", "sources": [], "context": ""}
+        return {"response": "Error processing request.", "sources": [], "images": [], "context": ""}

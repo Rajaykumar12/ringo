@@ -22,6 +22,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_classic.retrievers import EnsembleRetriever
 
 from document_store import ensure_documents_folder
+from image_store import save_image, delete_image
 from memory import get_session_history
 from latex_utils import normalize_math
 
@@ -58,6 +59,15 @@ def _ocr_image(img_bytes: bytes) -> str:
                 _OCR_AVAILABLE = False
             return ""
         return ""
+
+
+def _save_extracted_image(img_bytes: bytes, mime_hint: Optional[str] = None) -> Optional[str]:
+    """Persist an embedded document image to disk for later serving. Returns image_id or None on failure."""
+    try:
+        return save_image(img_bytes, mime_hint)
+    except Exception as e:
+        logger.warning("Failed to save extracted image: %s", e)
+        return None
 
 
 class LangChainRAG:
@@ -189,8 +199,9 @@ Instructions:
             for page_num, page in enumerate(doc):
                 text = page.get_text()
 
-                # OCR any images on this page
+                # OCR any images on this page, and persist them for later retrieval
                 ocr_parts = []
+                page_image_ids: List[str] = []
                 for img in page.get_images(full=True):
                     xref = img[0]
                     try:
@@ -198,6 +209,9 @@ Instructions:
                         ocr_text = _ocr_image(base_image["image"])
                         if ocr_text:
                             ocr_parts.append(f"[Image text: {ocr_text}]")
+                        img_id = _save_extracted_image(base_image["image"], base_image.get("ext"))
+                        if img_id:
+                            page_image_ids.append(img_id)
                     except Exception:
                         pass
 
@@ -208,7 +222,10 @@ Instructions:
                 if full_text.strip():
                     documents.append(Document(
                         page_content=full_text.strip(),
-                        metadata={"source": filename, "type": "pdf", "page": page_num + 1},
+                        metadata={
+                            "source": filename, "type": "pdf", "page": page_num + 1,
+                            "image_ids": ",".join(page_image_ids),
+                        },
                     ))
 
             page_count = len(documents)
@@ -233,13 +250,18 @@ Instructions:
                     if hasattr(shape, "text") and shape.text.strip()
                 )
 
-                # OCR picture shapes on this slide
+                # OCR picture shapes on this slide, and persist them for later retrieval
+                slide_image_ids: List[str] = []
                 for shape in slide.shapes:
                     if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                         try:
-                            ocr_text = _ocr_image(shape.image.blob)
+                            blob = shape.image.blob
+                            ocr_text = _ocr_image(blob)
                             if ocr_text:
                                 slide_text += f"\n[Image text: {ocr_text}]"
+                            img_id = _save_extracted_image(blob, shape.image.content_type)
+                            if img_id:
+                                slide_image_ids.append(img_id)
                         except Exception:
                             pass
 
@@ -247,7 +269,10 @@ Instructions:
                 if slide_text.strip():
                     documents.append(Document(
                         page_content=slide_text.strip(),
-                        metadata={"source": filename, "type": "pptx", "slide": i + 1},
+                        metadata={
+                            "source": filename, "type": "pptx", "slide": i + 1,
+                            "image_ids": ",".join(slide_image_ids),
+                        },
                     ))
                     slide_count += 1
 
@@ -441,14 +466,45 @@ Instructions:
         return [c for c in all_chunks if c.page_content and c.page_content.strip()]
 
     def _remove_source_chunks(self, filename: str) -> int:
-        """Delete all indexed chunks belonging to a given source filename. Returns count removed."""
+        """Delete all indexed chunks belonging to a given source filename, and any
+        images extracted from those chunks that don't survive on other still-indexed
+        chunks. Returns count of chunks removed."""
         if self.vectorstore is None:
             return 0
-        result = self.vectorstore._collection.get(where={"source": filename}, include=[])
+        result = self.vectorstore._collection.get(where={"source": filename}, include=["metadatas"])
         ids = result.get("ids", [])
+        metadatas = result.get("metadatas", []) or []
+        doomed_image_ids: set = set()
+        for m in metadatas:
+            raw = (m or {}).get("image_ids", "")
+            if raw:
+                doomed_image_ids.update(raw.split(","))
         if ids:
             self.vectorstore._collection.delete(ids=ids)
+        if doomed_image_ids:
+            self._cleanup_orphaned_images(doomed_image_ids)
         return len(ids)
+
+    def _cleanup_orphaned_images(self, candidate_image_ids: set) -> None:
+        """Delete on-disk image files for candidate_image_ids that no longer appear in
+        any remaining chunk's image_ids metadata."""
+        if self.vectorstore is None:
+            for img_id in candidate_image_ids:
+                delete_image(img_id)
+            return
+        try:
+            result = self.vectorstore._collection.get(include=["metadatas"])
+            still_referenced: set = set()
+            for m in (result.get("metadatas") or []):
+                raw = (m or {}).get("image_ids", "")
+                if raw:
+                    still_referenced.update(raw.split(","))
+        except Exception as e:
+            logger.warning(f"Failed to check image references before cleanup: {e}")
+            return
+        for img_id in candidate_image_ids - still_referenced:
+            if img_id:
+                delete_image(img_id)
 
     def _rebuild_bm25_from_store(self):
         """Rebuild the BM25 index from chunks already in ChromaDB (no re-embedding, no re-parsing)."""

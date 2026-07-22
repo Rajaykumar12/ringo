@@ -84,6 +84,17 @@
   display: block;
 }
 
+.attachedImageGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.attachedImageGrid .attachedImage {
+  margin-bottom: 0;
+}
+
 .bubbleTextUser {
   color: #ffffff;
 }

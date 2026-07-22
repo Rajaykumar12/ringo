@@ -78,6 +78,7 @@ class RAGRetriever:
         return {
             "response": result["response"],
             "sources": result.get("sources", []),
+            "images": result.get("images", []),
             "context": result.get("context", ""),
             "model_tier": result.get("model_tier", "default"),
             "query": query,
@@ -91,6 +92,7 @@ class ResponseGenerator:
             "success": True,
             "response": retrieval_result["response"],
             "sources": retrieval_result.get("sources", []),
+            "images": retrieval_result.get("images", []),
             "context": retrieval_result.get("context", ""),
             "model_tier": retrieval_result.get("model_tier", "default"),
             "source": retrieval_result["source"],
