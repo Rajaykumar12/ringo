@@ -102,20 +102,6 @@ export default function AdminPage() {
               <StatTile label="Relevance" value={stats.avg_answer_relevance ?? '—'} />
             </div>
 
-            {stats.language_breakdown && Object.keys(stats.language_breakdown).length > 0 && (
-              <>
-                <div className={styles.sectionLabel}>Languages</div>
-                <div className={styles.card}>
-                  {Object.entries(stats.language_breakdown).map(([lang, count]) => (
-                    <div key={lang} className={styles.langRow}>
-                      <span className={styles.langName}>{lang}</span>
-                      <span className={styles.langCount}>{count}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
             <div className={styles.sectionLabel}>Recent queries (last 24h)</div>
             {logs.length === 0 ? (
               <p className={styles.emptyText}>No log entries yet.</p>
@@ -125,7 +111,7 @@ export default function AdminPage() {
                   <p className={styles.logQuery}>{log.query}</p>
                   <p className={styles.logResponse}>{log.response}</p>
                   <div className={styles.logMeta}>
-                    <span className={styles.logMetaText}>{log.language} · {log.latency_ms}ms</span>
+                    <span className={styles.logMetaText}>{log.latency_ms}ms</span>
                     {log.user_rating != null && (
                       log.user_rating === 1
                         ? <IoThumbsUpOutline size={12} color={Colors.textFaint} />

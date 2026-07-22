@@ -4,12 +4,11 @@ import { IoSparkles, IoCopyOutline, IoCheckmark, IoPencilOutline, IoRefreshOutli
 import { Message } from '@/services/api';
 import { useThemeColors } from '@/hooks/use-theme-colors';
 import { StreamingLiveRegion } from '@/components/streaming-live-region';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './chat-messages.module.css';
 
 interface ChatMessagesProps {
   messages: Message[];
-  onPlayAudio: (messageId: string, messageText: string, messageLang: string, cachedAudioData?: string) => void;
+  onPlayAudio: (messageId: string, messageText: string, cachedAudioData?: string) => void;
   onPauseAudio: () => void;
   onResumeAudio: () => void;
   playingMessageId: string | null;
@@ -33,7 +32,6 @@ export function ChatMessages({
   isLoading,
 }: ChatMessagesProps) {
   const Colors = useThemeColors();
-  const { t } = useTranslation();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
@@ -43,11 +41,10 @@ export function ChatMessages({
   }, [messages]);
 
   const handleAudioButtonPress = (message: Message) => {
-    const lang = message.language || 'en';
     if (playingMessageId === message.id) {
       if (isPlaying) onPauseAudio(); else onResumeAudio();
     } else {
-      onPlayAudio(message.id, message.text, lang, message.audio_data);
+      onPlayAudio(message.id, message.text, message.audio_data);
     }
   };
 
@@ -113,7 +110,7 @@ export function ChatMessages({
                         <IoMic size={10} color={isUser ? 'rgba(255,255,255,0.7)' : Colors.textMuted} />
                       </span>
                       <span className={`${styles.audioLabelText} ${isUser ? styles.audioLabelTextUser : ''}`}>
-                        {t('chat.voiceLabel')}
+                        Voice
                       </span>
                     </div>
                   )}
@@ -129,7 +126,7 @@ export function ChatMessages({
                       type="button"
                       onClick={() => handleCopy(message)}
                       className={styles.actionIcon}
-                      aria-label={t('chat.copyMessage')}
+                      aria-label="Copy message"
                     >
                       {copiedId === message.id
                         ? <IoCheckmark size={12} color={Colors.textFaint} />
@@ -141,7 +138,7 @@ export function ChatMessages({
                         type="button"
                         onClick={() => onEditMessage(message)}
                         className={styles.actionIcon}
-                        aria-label={t('chat.editMessage')}
+                        aria-label="Edit and resend message"
                       >
                         <IoPencilOutline size={12} color={Colors.textFaint} />
                       </button>
@@ -152,7 +149,7 @@ export function ChatMessages({
                         type="button"
                         onClick={() => onRegenerate(message)}
                         className={styles.actionIcon}
-                        aria-label={t('chat.regenerate')}
+                        aria-label="Regenerate response"
                       >
                         <IoRefreshOutline size={12} color={Colors.textFaint} />
                       </button>
@@ -166,7 +163,7 @@ export function ChatMessages({
                   type="button"
                   onClick={() => handleAudioButtonPress(message)}
                   className={styles.audioBtn}
-                  aria-label={isPlayingThis && isPlaying ? t('chat.pauseAudio') : t('chat.playAudio')}
+                  aria-label={isPlayingThis && isPlaying ? 'Pause audio' : 'Play audio'}
                 >
                   {isGeneratingTTS && isPlayingThis ? (
                     <span className={styles.spinner} />
