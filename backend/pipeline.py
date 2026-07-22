@@ -32,7 +32,7 @@ class AudioInputProcessor:
     def __init__(self):
         import whisper
         logger.info("Loading Whisper model...")
-        self.model = whisper.load_model("base")
+        self.model = whisper.load_model("base.en")
         logger.info("Whisper model loaded")
     
     def process(self, audio_bytes: bytes, mime_type: str = "audio/wav") -> Dict[str, Any]:
@@ -47,14 +47,13 @@ class AudioInputProcessor:
                 temp_audio_path = temp_audio.name
             
             try:
-                result = self.model.transcribe(temp_audio_path)
+                result = self.model.transcribe(temp_audio_path, language="en")
                 transcribed_text = result["text"].strip()
                 if not transcribed_text:
                     raise TranscriptionError("No speech detected in the audio")
                 return {
                     "text": transcribed_text,
-                    "source": "audio",
-                    "detected_language": result.get("language", "unknown")
+                    "source": "audio"
                 }
             finally:
                 if os.path.exists(temp_audio_path): os.remove(temp_audio_path)
@@ -64,35 +63,24 @@ class AudioInputProcessor:
             raise RuntimeError(f"Transcription failed: {str(e)}")
 
 class QueryRefiner:
-    # Stage 2: Query refinement and language detection
-    def detect_language(self, text: str) -> str:
-        try:
-            from langdetect import detect
-            lang_map = {'en': 'en', 'hi': 'hi', 'ta': 'ta', 'te': 'te'}
-            return lang_map.get(detect(text), 'en')
-        except: return "en"
-    
-    def refine(self, processed_input: Dict[str, Any], language: Optional[str] = None, session_id: str = "default") -> Dict[str, Any]:
+    # Stage 2: Query refinement
+    def refine(self, processed_input: Dict[str, Any], session_id: str = "default") -> Dict[str, Any]:
         text, source = processed_input["text"], processed_input["source"]
-        if not language or language not in ["en", "hi", "ta", "te"]:
-            language = self.detect_language(text)
-        
-        return {"query": text.strip(), "language": language, "source": source, "session_id": session_id}
+        return {"query": text.strip(), "source": source, "session_id": session_id}
 
 class RAGRetriever:
     # Stage 3: Retrieve context using LangChain
     @staticmethod
     def retrieve(refined_query: Dict[str, Any]) -> Dict[str, Any]:
-        query, language = refined_query["query"], refined_query["language"]
+        query = refined_query["query"]
         session_id = refined_query.get("session_id", "default")
-        result = get_rag_response(query, language, session_id)
+        result = get_rag_response(query, session_id)
         return {
             "response": result["response"],
             "sources": result.get("sources", []),
             "context": result.get("context", ""),
             "model_tier": result.get("model_tier", "default"),
             "query": query,
-            "language": language,
             "source": refined_query["source"]
         }
 
@@ -105,7 +93,6 @@ class ResponseGenerator:
             "sources": retrieval_result.get("sources", []),
             "context": retrieval_result.get("context", ""),
             "model_tier": retrieval_result.get("model_tier", "default"),
-            "language": retrieval_result["language"],
             "source": retrieval_result["source"],
             "query": retrieval_result["query"]
         }
@@ -120,16 +107,7 @@ class ResponseGenerator:
             from concurrent.futures import ThreadPoolExecutor
             
             text = retrieval_result["response"]
-            language = retrieval_result["language"]
-            
-            # Map language codes to edge-tts voice names (neural voices)
-            voice_map = {
-                "en": "en-US-ChristopherNeural",      # English (US) - Female
-                "hi": "hi-IN-SwaraNeural",     # Hindi (India) - Female
-                "ta": "ta-IN-PallaviNeural",   # Tamil (India) - Female
-                "te": "te-IN-ShrutiNeural"     # Telugu (India) - Female
-            }
-            voice = voice_map.get(language, "en-US-AriaNeural")
+            voice = "en-US-ChristopherNeural"
             
             # Create temporary file for audio
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as temp_audio:
@@ -159,7 +137,7 @@ class ResponseGenerator:
                     audio_bytes = audio_file.read()
                     audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
                 
-                logger.info("Edge-TTS generated for language: %s (voice: %s)", language, voice)
+                logger.info("Edge-TTS generated (voice: %s)", voice)
                 return audio_base64
             finally:
                 # Clean up temp file
@@ -179,24 +157,23 @@ class PipelineOrchestrator:
         self.rag_retriever = RAGRetriever()
         self.response_generator = ResponseGenerator()
     
-    def process_text(self, text: str, language: Optional[str] = None, return_audio: bool = False, session_id: str = "default") -> Dict[str, Any]:
+    def process_text(self, text: str, return_audio: bool = False, session_id: str = "default") -> Dict[str, Any]:
         """Process text input through the pipeline."""
         stage1 = self.text_processor.process(text)
-        stage2 = self.query_refiner.refine(stage1, language, session_id)
+        stage2 = self.query_refiner.refine(stage1, session_id)
         stage3 = self.rag_retriever.retrieve(stage2)
         return self.response_generator.generate(stage3)
-    
+
     def process_audio(
         self,
         audio_bytes: bytes,
         mime_type: str = "audio/wav",
-        language: Optional[str] = None,
         return_audio: bool = False,
         session_id: str = "default"
     ) -> Dict[str, Any]:
         """Process audio input through the pipeline."""
         stage1_output = self.audio_processor.process(audio_bytes, mime_type)
-        stage2_output = self.query_refiner.refine(stage1_output, language, session_id)
+        stage2_output = self.query_refiner.refine(stage1_output, session_id)
         stage3_output = self.rag_retriever.retrieve(stage2_output)
         final_output = self.response_generator.generate(stage3_output)
         final_output["transcription"] = stage1_output["text"]
