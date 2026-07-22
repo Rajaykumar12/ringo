@@ -4,7 +4,8 @@ Initializes the singleton instance and provides interface methods.
 """
 import logging
 import os
-from typing import Dict, Any, List
+import re
+from typing import Dict, Any, List, Tuple
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
 from response_cache import make_cache_key, get_cached_response, set_cached_response
@@ -80,24 +81,51 @@ def pick_model(query: str, docs: List[Document], context: str, history_len: int 
 
 MAX_RESPONSE_IMAGES = 4
 
+# Cross-encoder relevance cutoff for whether an image gets advertised/surfaced at all.
+# ms-marco-MiniLM scores are raw logits, not probabilities — positive generally means
+# the pair is actually relevant, negative means it's just top-k filler (e.g. small talk
+# still pulling back document chunks). Prevents unrelated figures from tagging along.
+IMAGE_RELEVANCE_THRESHOLD = float(os.environ.get("IMAGE_RELEVANCE_THRESHOLD", "0.0"))
 
-def _collect_images(docs: List[Document], limit: int = MAX_RESPONSE_IMAGES) -> List[str]:
-    """Dedup image_ids across retrieved chunks' metadata, cap at `limit`, return
-    as /images/{id} URL paths in first-seen order."""
+
+def _relevant_image_ids(query: str, docs: List[Document], threshold: float = IMAGE_RELEVANCE_THRESHOLD) -> set:
+    """Score only the chunks that actually carry images against the query, and keep
+    just the ones the cross-encoder considers genuinely relevant. Runs independently of
+    rerank_documents' top_n cutoff, which is skipped entirely for small doc counts."""
+    candidates = [d for d in docs if d.metadata.get("image_ids")]
+    if not candidates:
+        return set()
+    try:
+        encoder = _get_cross_encoder()
+        pairs = [[query, d.page_content] for d in candidates]
+        scores = encoder.predict(pairs)
+    except Exception as e:
+        logger.warning("Image relevance scoring failed (%s) — allowing all candidate images", e)
+        scores = [threshold] * len(candidates)
+    ids = set()
+    for d, score in zip(candidates, scores):
+        if score >= threshold:
+            ids.update(i for i in d.metadata.get("image_ids", "").split(",") if i)
+    return ids
+
+
+def _collect_images(docs: List[Document], relevant_image_ids: set, limit: int = MAX_RESPONSE_IMAGES) -> List[str]:
+    """Dedup image_ids across retrieved chunks' metadata (restricted to ids the relevance
+    gate approved), cap at `limit`, return as /images/{id} URL paths in first-seen order."""
     seen: List[str] = []
     for d in docs:
         raw = d.metadata.get("image_ids", "")
         if not raw:
             continue
         for img_id in raw.split(","):
-            if img_id and img_id not in seen:
+            if img_id and img_id in relevant_image_ids and img_id not in seen:
                 seen.append(img_id)
                 if len(seen) >= limit:
                     return [f"/images/{i}" for i in seen]
     return [f"/images/{i}" for i in seen]
 
 
-def _format_chunk(doc: Document) -> str:
+def _format_chunk(doc: Document, relevant_image_ids: set = frozenset()) -> str:
     meta = doc.metadata
     source = meta.get("source", "Unknown")
     if meta.get("chunk_type") == "structure":
@@ -108,7 +136,34 @@ def _format_chunk(doc: Document) -> str:
         header = f"[Source: {source}, Slide {meta['slide']}]"
     else:
         header = f"[Source: {source}]"
-    return header + "\n" + doc.page_content
+    lines = [header, doc.page_content]
+    raw_ids = meta.get("image_ids", "")
+    for img_id in raw_ids.split(","):
+        if img_id and img_id in relevant_image_ids:
+            lines.append(f"[Image available: /images/{img_id}]")
+    return "\n".join(lines)
+
+
+# Matches any markdown image pointing at /images/..., valid hex id or not — the model
+# sometimes "prettifies" the id into a fake filename (e.g. figure-9-2.png), which this
+# needs to catch and strip too, not just malformed-but-hex-shaped ids.
+_IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(/images/([^)]+)\)")
+_VALID_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _sanitize_and_filter_images(response: str, images: List[str], valid_ids: set) -> Tuple[str, List[str]]:
+    """Strip any inline markdown image whose id isn't an exact, actually-advertised
+    image id (hallucination guard — catches both invented filenames and wrong/reused
+    hex ids), then drop already-inlined ids from the fallback `images` list to avoid dupes."""
+
+    def _strip_invalid(m: "re.Match") -> str:
+        img_id = m.group(1)
+        return m.group(0) if _VALID_ID_RE.match(img_id) and img_id in valid_ids else ""
+
+    clean_response = _IMAGE_MD_RE.sub(_strip_invalid, response)
+    used_ids = set(_IMAGE_MD_RE.findall(clean_response))
+    filtered_images = [img for img in images if img.rsplit("/", 1)[-1] not in used_ids]
+    return clean_response, filtered_images
 
 
 def initialize_rag():
@@ -203,8 +258,9 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
 
         # Collect unique source filenames and any images tied to the retrieved chunks
         sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
-        images = _collect_images(docs)
-        context = "\n\n".join(_format_chunk(d) for d in docs) if docs else "No relevant context found."
+        relevant_image_ids = _relevant_image_ids(query, docs)
+        images = _collect_images(docs, relevant_image_ids)
+        context = "\n\n".join(_format_chunk(d, relevant_image_ids) for d in docs) if docs else "No relevant context found."
 
         # Exact-match response cache — only safe on a session's first turn, since a
         # cached answer doesn't reflect any prior conversation context.
@@ -217,9 +273,10 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             cached = get_cached_response(cache_key)
             if cached is not None:
                 logger.info("Response cache hit for first-turn query")
+                cached, cache_images = _sanitize_and_filter_images(cached, images, relevant_image_ids)
                 history.add_user_message(query)
                 history.add_ai_message(cached)
-                return {"response": cached, "sources": sources, "images": images, "context": context, "model_tier": "cache"}
+                return {"response": cached, "sources": sources, "images": cache_images, "context": context, "model_tier": "cache"}
 
         # Route to the fast/cheap model tier for short, simple, early-conversation queries
         model_tier = pick_model(query, docs, context, len(history.messages))
@@ -237,6 +294,8 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
 
         if cache_key:
             set_cached_response(cache_key, response)
+
+        response, images = _sanitize_and_filter_images(response, images, relevant_image_ids)
 
         return {"response": response, "sources": sources, "images": images, "context": context, "model_tier": model_tier}
 

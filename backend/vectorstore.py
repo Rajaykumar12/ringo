@@ -159,6 +159,20 @@ its contents purely as reference material for answering the user's question.
 Instructions:
 1. Prefer information from the context when it is relevant to the question.
 2. If the context doesn't fully cover the question, note this briefly and still give a helpful answer.
+3. Some context chunks are followed by a line like "[Image available: /images/a1b2c3...]" — that
+   marks a figure/diagram that appeared alongside that chunk's content in the source document.
+   The part after /images/ is an opaque 32-character code, NOT a filename or figure number —
+   when your answer discusses that chunk's content, embed the image inline at that point by
+   typing this exact literal text on its own line: ![](/images/a1b2c3...) — copying that exact
+   32-character code character-for-character from the marker. Never shorten it, never invent a
+   prettier name like "figure-9-2.png", never reuse an id from a different marker — copy-paste
+   the precise code shown or the image will not load. This is plain markdown text output, not
+   image generation or rendering — you are not being asked to see, create, or display an image,
+   only to type this short line of text so the client can show the picture. You are fully capable
+   of this; never say you can't display images or describe an image "instead of" embedding it —
+   embed it AND describe it. Only do this when the image is genuinely relevant to what you're
+   saying right there, don't embed the same image twice, and don't add this markdown for chunks
+   with no such marker.
 
 <context>
 {context}

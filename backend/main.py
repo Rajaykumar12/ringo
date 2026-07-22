@@ -15,7 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref, _format_chunk, _sanitize_and_filter_images, _relevant_image_ids, _collect_images
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from document_store import upload_document, delete_document
@@ -59,31 +59,20 @@ def _validate_session_id(session_id: str) -> None:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
 
 
-MAX_IMAGES_PER_RESPONSE = 4
-
+# Allows up to 2 words between the determiner and the noun so phrasing like
+# "the SOSC logo" still matches, not just "the image". Deliberately excludes
+# generic document-content nouns like "diagram"/"figure" — those are exactly
+# what real RAG questions about the book's own figures use, and would wrongly
+# hijack them into the uploaded-image recall path.
 _IMAGE_REFERENCE_RE = re.compile(
-    r"\b(that|this|the)\s+(image|picture|photo|pic|screenshot)\b", re.IGNORECASE
+    r"\b(that|this|the)\s+(?:\w+\s+){0,2}"
+    r"(image|picture|photo|pic|screenshot|logo)\b",
+    re.IGNORECASE,
 )
 
 
 def _references_prior_image(message: str) -> bool:
     return bool(_IMAGE_REFERENCE_RE.search(message))
-
-
-def _collect_images_from_docs(docs, limit: int = MAX_IMAGES_PER_RESPONSE) -> list:
-    """Dedup image_ids across retrieved chunks' metadata, cap at `limit`, return
-    as /images/{id} URL paths in first-seen order."""
-    seen: list = []
-    for d in docs:
-        raw = (d.metadata or {}).get("image_ids", "")
-        if not raw:
-            continue
-        for img_id in raw.split(","):
-            if img_id and img_id not in seen:
-                seen.append(img_id)
-                if len(seen) >= limit:
-                    return [f"/images/{i}" for i in seen]
-    return [f"/images/{i}" for i in seen]
 
 
 async def _try_image_followup(message: str, session_id: str) -> Optional[dict]:
@@ -295,11 +284,11 @@ async def text_chat(
             docs = await asyncio.to_thread(retriever.invoke, message)
             docs = await asyncio.to_thread(rerank_documents, message, docs)
             sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
-            images = _collect_images_from_docs(docs)
-            context = "\n\n".join(d.page_content for d in docs) if docs else "No relevant context found."
+            relevant_image_ids = await asyncio.to_thread(_relevant_image_ids, message, docs)
+            candidate_images = _collect_images(docs, relevant_image_ids)
+            context = "\n\n".join(_format_chunk(d, relevant_image_ids) for d in docs) if docs else "No relevant context found."
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
-            yield f"data: {json.dumps({'type': 'images', 'value': images})}\n\n"
 
             model_tier = pick_model(message, docs, context)
             chain = (
@@ -322,11 +311,14 @@ async def text_chat(
                 logger.error("[stream_response] LLM streaming error: %s: %s", type(e).__name__, e)
                 yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
+            _, images = _sanitize_and_filter_images(full_response, candidate_images, relevant_image_ids)
+
             log_id, partition_key = log_rag_call(message, full_response, sources, 0, context, model_tier=model_tier)
             asyncio.get_running_loop().run_in_executor(
                 None, _eval_and_update, log_id, partition_key, message, context, full_response
             )
             yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
+            yield f"data: {json.dumps({'type': 'images', 'value': images})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources, 'images': images})}\n\n"
 
         return StreamingResponse(stream_response(), media_type="text/event-stream")

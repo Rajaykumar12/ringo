@@ -15,8 +15,12 @@ logger = logging.getLogger("ringo.vision")
 
 # qwen/qwen3.6-27b (and other reasoning models) emit a <think>...</think>
 # block ahead of the actual answer — strip it so raw chain-of-thought never
-# reaches the user.
+# reaches the user. If generation gets cut off mid-thought (hits max_tokens
+# before closing the tag), there's no closing </think> to match — the second
+# pattern catches that dangling case so a truncated block still gets removed
+# instead of leaking to the user verbatim.
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_UNCLOSED_THINK_RE = re.compile(r"<think>.*", re.DOTALL)
 
 VISION_MODEL = os.environ.get("VISION_MODEL", "qwen/qwen3.6-27b")
 MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", 8))
@@ -50,10 +54,14 @@ def describe_image(image_bytes: bytes, mime_type: str, question: str) -> str:
                 }
             ],
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=2048,
         )
         content = completion.choices[0].message.content
-        return _THINK_TAG_RE.sub("", content).strip()
+        cleaned = _THINK_TAG_RE.sub("", content)
+        cleaned = _UNCLOSED_THINK_RE.sub("", cleaned).strip()
+        if not cleaned:
+            return "Sorry, I couldn't come up with a clear answer for that — could you try a more specific question?"
+        return cleaned
     except Exception as e:
         logger.error("Vision model error: %s", e)
         return "Sorry, I couldn't process that image."
