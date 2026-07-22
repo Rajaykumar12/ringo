@@ -39,9 +39,9 @@ def _get_redis():
     return _redis_client if _redis_ok else None
 
 
-def make_cache_key(query: str, language: str, context: str) -> str:
+def make_cache_key(query: str, context: str) -> str:
     normalized = query.strip().lower()
-    digest = hashlib.sha256(f"{normalized}|{language}|{context}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{normalized}|{context}".encode("utf-8")).hexdigest()
     return f"ringo:response_cache:{digest}"
 
 

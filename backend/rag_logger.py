@@ -1,6 +1,6 @@
 """
 rag_logger.py — RAG call logging.
-Logs each query, response, sources, context, language, and latency to a local
+Logs each query, response, sources, context, and latency to a local
 SQLite store (local_store.py) for the admin dashboard.
 """
 import logging
@@ -16,7 +16,6 @@ def log_rag_call(
     query: str,
     response: str,
     sources: list,
-    language: str,
     latency_ms: int,
     context: str = "",
     model_tier: str = "default",
@@ -32,7 +31,6 @@ def log_rag_call(
             "query": query[:1000],
             "response": response[:1000],
             "sources": ", ".join(sources),
-            "language": language,
             "latency_ms": latency_ms,
             "context": context[:2000],
             "model_tier": model_tier,

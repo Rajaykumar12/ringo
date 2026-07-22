@@ -60,11 +60,11 @@ def insert_log(entity: Dict[str, Any]) -> None:
     with _connect() as conn:
         conn.execute(
             """INSERT OR REPLACE INTO raglogs
-               (partition_key, row_key, query, response, sources, language, latency_ms, context, model_tier, timestamp)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               (partition_key, row_key, query, response, sources, latency_ms, context, model_tier, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 entity["PartitionKey"], entity["RowKey"], entity.get("query"), entity.get("response"),
-                entity.get("sources"), entity.get("language"), entity.get("latency_ms"),
+                entity.get("sources"), entity.get("latency_ms"),
                 entity.get("context"), entity.get("model_tier"), entity.get("timestamp"),
             ),
         )
