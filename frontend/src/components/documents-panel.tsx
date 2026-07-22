@@ -6,7 +6,6 @@ import {
 import type { IconType } from 'react-icons';
 import { listDocuments, uploadDocument, deleteDocument, DocumentInfo } from '@/services/api';
 import { useThemeColors } from '@/hooks/use-theme-colors';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './documents-panel.module.css';
 
 interface DocumentsPanelProps {
@@ -37,7 +36,6 @@ function getErrorMessage(e: any, fallback: string): string {
 export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   const Colors = useThemeColors();
   const TYPE_ICON = React.useMemo(() => createTypeIcon(Colors), [Colors]);
-  const { t } = useTranslation();
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -51,11 +49,10 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
     try {
       setDocuments(await listDocuments());
     } catch {
-      setError(t('documents.loadFailed'));
+      setError('Failed to load documents.');
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { if (visible) fetchDocuments(); }, [visible, fetchDocuments]);
@@ -70,7 +67,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
     if (!file) return;
 
     if (file.size > MAX_DOCUMENT_SIZE_MB * 1024 * 1024) {
-      window.alert(t('documents.fileTooLargeMessage', { filename: file.name, limit: MAX_DOCUMENT_SIZE_MB }));
+      window.alert(`"${file.name}" exceeds the ${MAX_DOCUMENT_SIZE_MB}MB limit.`);
       return;
     }
     setUploading(true);
@@ -81,7 +78,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       URL.revokeObjectURL(uri);
       await fetchDocuments();
     } catch (err: any) {
-      window.alert(getErrorMessage(err, t('documents.uploadFailedGeneric')));
+      window.alert(getErrorMessage(err, 'Something went wrong. Please try again.'));
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -89,12 +86,12 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   };
 
   const handleDelete = async (filename: string) => {
-    if (!window.confirm(t('documents.removeConfirm', { filename }))) return;
+    if (!window.confirm(`Remove "${filename}" from the index?`)) return;
     try {
       await deleteDocument(filename);
       await fetchDocuments();
     } catch (e: any) {
-      window.alert(getErrorMessage(e, t('documents.deleteFailed')));
+      window.alert(getErrorMessage(e, 'Delete failed. Please try again.'));
     }
   };
 
@@ -108,7 +105,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
         className={styles.container}
         role="dialog"
         aria-modal="true"
-        aria-label={t('documents.title')}
+        aria-label="Documents"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
@@ -116,14 +113,14 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
             <div className={styles.headerIconWrap}>
               <IoFolderOpen size={18} color={Colors.amber} />
             </div>
-            <h2 className={styles.title}>{t('documents.title')}</h2>
+            <h2 className={styles.title}>Documents</h2>
           </div>
-          <button type="button" onClick={onClose} className={styles.closeBtn} aria-label={t('documents.close')}>
+          <button type="button" onClick={onClose} className={styles.closeBtn} aria-label="Close documents panel">
             <IoClose size={18} color={Colors.textMuted} />
           </button>
         </div>
 
-        <p className={styles.subtitle}>{t('documents.subtitle')}</p>
+        <p className={styles.subtitle}>Upload PDFs, PowerPoints, or Markdown to expand the knowledge base.</p>
 
         <input
           ref={fileInputRef}
@@ -137,24 +134,24 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
           className={`${styles.uploadBtn} ${uploading ? styles.uploadBtnDisabled : ''}`}
           onClick={handlePick}
           disabled={uploading}
-          aria-label={t('documents.upload')}
+          aria-label="Upload Document"
         >
           {uploading ? (
             <div className={styles.uploadBtnInner}>
               <div className={styles.spinner} style={{ width: 16, height: 16, borderWidth: 2, borderTopColor: '#fff', borderColor: 'rgba(255,255,255,0.4)' }} />
               <span className={styles.uploadBtnText}>
-                {t('documents.uploading')}{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}
+                Uploading{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}
               </span>
             </div>
           ) : (
             <div className={styles.uploadBtnInner}>
               <IoCloudUploadOutline size={18} color="#FFF" />
-              <span className={styles.uploadBtnText}>{t('documents.upload')}</span>
+              <span className={styles.uploadBtnText}>Upload Document</span>
             </div>
           )}
         </button>
 
-        <p className={styles.hint}>{t('documents.hint')}</p>
+        <p className={styles.hint}>PDF · PPTX · Markdown — max 20 MB</p>
 
         <div className={styles.divider} />
 
@@ -168,8 +165,8 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
               <IoAlertCircleOutline size={28} color={Colors.error} />
             </div>
             <p className={styles.errorText}>{error}</p>
-            <button type="button" onClick={fetchDocuments} className={styles.retryBtn} aria-label={t('common.tryAgain')}>
-              <span className={styles.retryBtnText}>{t('common.tryAgain')}</span>
+            <button type="button" onClick={fetchDocuments} className={styles.retryBtn} aria-label="Try Again">
+              <span className={styles.retryBtnText}>Try Again</span>
             </button>
           </div>
         ) : documents.length === 0 ? (
@@ -177,14 +174,14 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
             <div className={styles.emptyIconWrap}>
               <IoFolderOpenOutline size={36} color={Colors.amber} />
             </div>
-            <p className={styles.emptyTitle}>{t('documents.emptyTitle')}</p>
-            <p className={styles.emptySub}>{t('documents.emptySub')}</p>
+            <p className={styles.emptyTitle}>No documents yet</p>
+            <p className={styles.emptySub}>Upload a file to get started.</p>
           </div>
         ) : (
           <div className={styles.list}>
             <p className={styles.listHeader}>
               <span className={styles.listHeaderDot}>● </span>
-              {t('documents.indexedCount', { count: documents.length })}
+              {documents.length} documents indexed
             </p>
             {documents.map((doc) => {
               const { Icon, color, bg } = getTypeIcon(doc.type);
@@ -201,7 +198,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
                     type="button"
                     onClick={() => handleDelete(doc.filename)}
                     className={styles.deleteBtn}
-                    aria-label={t('documents.remove', { filename: doc.filename })}
+                    aria-label={`Remove ${doc.filename}`}
                   >
                     <IoTrashOutline size={16} color={Colors.error} />
                   </button>

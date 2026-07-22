@@ -6,7 +6,6 @@ import { useThemeColors } from '@/hooks/use-theme-colors';
 import { SettingsProvider } from '@/hooks/use-app-settings';
 import { ConversationsProvider } from '@/hooks/use-conversations';
 import { NetworkStatusProvider } from '@/hooks/use-network-status';
-import { useTranslation } from '@/hooks/use-translation';
 import ChatPage from '@/pages/ChatPage';
 import SettingsPage from '@/pages/SettingsPage';
 import AdminPage from '@/pages/AdminPage';
@@ -20,7 +19,6 @@ interface ErrorBoundaryState {
 type ErrorBoundaryProps = {
   children: ReactNode;
   colors: ReturnType<typeof useThemeColors>;
-  t: (key: string) => string;
 };
 
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -39,21 +37,21 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   render() {
     if (this.state.hasError) {
-      const { t, colors } = this.props;
+      const { colors } = this.props;
       return (
         <div className={styles.container}>
           <div className={styles.iconWrap}>
             <IoAlertCircleOutline size={32} color={colors.amber} />
           </div>
-          <h1 className={styles.title}>{t('errorBoundary.title')}</h1>
-          <p className={styles.message}>{t('errorBoundary.message')}</p>
+          <h1 className={styles.title}>Something went wrong</h1>
+          <p className={styles.message}>An unexpected error occurred. Please try again.</p>
           <button
             type="button"
             className={styles.button}
             onClick={() => this.setState({ hasError: false, error: null })}
-            aria-label={t('errorBoundary.tryAgain')}
+            aria-label="Try Again"
           >
-            {t('errorBoundary.tryAgain')}
+            Try Again
           </button>
         </div>
       );
@@ -76,10 +74,9 @@ export default function App() {
 
 function AppInner() {
   const colors = useThemeColors();
-  const { t } = useTranslation();
 
   return (
-    <ErrorBoundary colors={colors} t={t}>
+    <ErrorBoundary colors={colors}>
       <HashRouter>
         <Routes>
           <Route path="/" element={<ChatPage />} />

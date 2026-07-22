@@ -1,7 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { IoImageOutline, IoCloseCircle, IoStopCircle, IoSend, IoMic, IoStop } from 'react-icons/io5';
 import { useThemeColors } from '@/hooks/use-theme-colors';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './chat-input.module.css';
 
 export interface AttachedImage {
@@ -29,7 +28,6 @@ export function ChatInput({
   onEditingTextConsumed,
 }: ChatInputProps) {
   const Colors = useThemeColors();
-  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [focused, setFocused] = useState(false);
   const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
@@ -90,7 +88,7 @@ export function ChatInput({
             type="button"
             onClick={handleAttachImage}
             className={styles.attachButton}
-            aria-label={t('chat.attachImage')}
+            aria-label="Attach image"
           >
             <IoImageOutline size={22} color={Colors.textFaint} />
           </button>
@@ -103,7 +101,7 @@ export function ChatInput({
             <button
               type="button"
               onClick={() => setAttachedImage(null)}
-              aria-label={t('chat.removeAttachedImage')}
+              aria-label="Remove attached image"
               className={styles.removeImageButton}
             >
               <IoCloseCircle size={18} color={Colors.textFaint} />
@@ -113,7 +111,7 @@ export function ChatInput({
         <textarea
           ref={textareaRef}
           className={styles.input}
-          placeholder={t('chat.placeholder')}
+          placeholder="Ask anything…"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           maxLength={1000}
@@ -130,7 +128,7 @@ export function ChatInput({
           type="button"
           onClick={onStop}
           className={`${styles.actionButton} ${styles.loadingButton}`}
-          aria-label={t('chat.stopGenerating')}
+          aria-label="Stop generating"
         >
           <IoStop size={18} color={Colors.error} />
         </button>

@@ -1,7 +1,6 @@
 import { IoChatbubblesOutline, IoFolderOpenOutline, IoSettingsOutline } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { useThemeColors } from '@/hooks/use-theme-colors';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './header-menu.module.css';
 
 interface HeaderMenuProps {
@@ -20,14 +19,13 @@ export function HeaderMenu({
   onSelectSettings,
 }: HeaderMenuProps) {
   const Colors = useThemeColors();
-  const { t } = useTranslation();
 
   if (!visible) return null;
 
   const items: { label: string; icon: IconType; onPress: () => void }[] = [
-    { label: t('menu.chatHistory'), icon: IoChatbubblesOutline, onPress: onSelectHistory },
-    { label: t('menu.documents'), icon: IoFolderOpenOutline, onPress: onSelectDocuments },
-    { label: t('menu.settings'), icon: IoSettingsOutline, onPress: onSelectSettings },
+    { label: 'Chat history', icon: IoChatbubblesOutline, onPress: onSelectHistory },
+    { label: 'Documents', icon: IoFolderOpenOutline, onPress: onSelectDocuments },
+    { label: 'Settings', icon: IoSettingsOutline, onPress: onSelectSettings },
   ];
 
   return (

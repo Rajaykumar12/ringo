@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { IoChatbubbles, IoClose, IoAdd, IoPencilOutline, IoTrashOutline } from 'react-icons/io5';
 import { useThemeColors } from '@/hooks/use-theme-colors';
 import { Conversation, useConversations } from '@/hooks/use-conversations';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './conversations-panel.module.css';
 
 interface ConversationsPanelProps {
@@ -21,7 +20,6 @@ function formatDate(ts: number): string {
 
 export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps) {
   const Colors = useThemeColors();
-  const { t } = useTranslation();
   const {
     conversations, activeId, createConversation, selectConversation, deleteConversation, renameConversation,
   } = useConversations();
@@ -56,7 +54,7 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
   };
 
   const handleDelete = (c: Conversation) => {
-    if (window.confirm(t('conversations.deleteConfirm', { title: c.title }))) {
+    if (window.confirm(`Delete "${c.title}"?`)) {
       deleteConversation(c.id);
     }
   };
@@ -67,7 +65,7 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
         className={styles.container}
         role="dialog"
         aria-modal="true"
-        aria-label={t('conversations.title')}
+        aria-label="Chats"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={styles.header}>
@@ -75,16 +73,16 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
             <div className={styles.headerIconWrap}>
               <IoChatbubbles size={18} color={Colors.amber} />
             </div>
-            <h2 className={styles.title}>{t('conversations.title')}</h2>
+            <h2 className={styles.title}>Chats</h2>
           </div>
-          <button type="button" onClick={onClose} className={styles.closeBtn} aria-label={t('conversations.close')}>
+          <button type="button" onClick={onClose} className={styles.closeBtn} aria-label="Close chat history">
             <IoClose size={18} color={Colors.textMuted} />
           </button>
         </div>
 
-        <button type="button" className={styles.newBtn} onClick={handleNewChat} aria-label={t('conversations.startNewChat')}>
+        <button type="button" className={styles.newBtn} onClick={handleNewChat} aria-label="Start a new chat">
           <IoAdd size={18} color="#FFF" />
-          <span className={styles.newBtnText}>{t('conversations.newChat')}</span>
+          <span className={styles.newBtnText}>New Chat</span>
         </button>
 
         <div className={styles.divider} />
@@ -112,11 +110,11 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                     type="button"
                     className={styles.convMain}
                     onClick={() => handleSelect(c.id)}
-                    aria-label={t('conversations.openChat', { title: c.title })}
+                    aria-label={`Open chat: ${c.title}`}
                   >
                     <span className={styles.convTitle}>{c.title}</span>
                     <span className={styles.convMeta}>
-                      {t('conversations.messageCount', { count: c.messages.length })} · {formatDate(c.updatedAt)}
+                      {c.messages.length} messages · {formatDate(c.updatedAt)}
                     </span>
                   </button>
                 )}
@@ -127,7 +125,7 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                       type="button"
                       onClick={() => startRename(c)}
                       className={styles.iconBtn}
-                      aria-label={t('conversations.rename', { title: c.title })}
+                      aria-label={`Rename ${c.title}`}
                     >
                       <IoPencilOutline size={15} color={Colors.textMuted} />
                     </button>
@@ -135,7 +133,7 @@ export function ConversationsPanel({ visible, onClose }: ConversationsPanelProps
                       type="button"
                       onClick={() => handleDelete(c)}
                       className={styles.iconBtn}
-                      aria-label={t('conversations.delete', { title: c.title })}
+                      aria-label={`Delete ${c.title}`}
                     >
                       <IoTrashOutline size={15} color={Colors.error} />
                     </button>
