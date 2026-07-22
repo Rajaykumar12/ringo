@@ -1,5 +1,6 @@
 .container {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   background-color: var(--color-bg);
 }
@@ -82,6 +83,7 @@
   border-radius: var(--radius-md);
   margin-bottom: 8px;
   display: block;
+  cursor: pointer;
 }
 
 .attachedImageGrid {
@@ -93,6 +95,40 @@
 
 .attachedImageGrid .attachedImage {
   margin-bottom: 0;
+}
+
+.lightboxBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  cursor: pointer;
+}
+
+.lightboxImage {
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  cursor: default;
+}
+
+.lightboxClose {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: var(--radius-full);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
 .bubbleTextUser {

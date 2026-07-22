@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Message } from '@/services/api';
 
 export interface Conversation {
@@ -44,7 +44,6 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const hydrating = useRef(true);
 
   useEffect(() => {
     try {
@@ -62,7 +61,6 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
               ? parsed.activeId
               : restored[0].id
           );
-          hydrating.current = false;
           setLoaded(true);
           return;
         }
@@ -73,18 +71,22 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     const fresh = freshConversation();
     setConversations([fresh]);
     setActiveId(fresh.id);
-    hydrating.current = false;
     setLoaded(true);
   }, []);
 
+  // Gated on `loaded` (state, not a ref) so this only ever fires on a render where
+  // `conversations`/`activeId` already reflect the hydrated values — a ref flipped
+  // inside the hydration effect above flips before this effect's closure captures
+  // the new state, so it would otherwise fire once with the stale pre-hydration
+  // ([], null) and overwrite the persisted history with an empty conversation list.
   useEffect(() => {
-    if (hydrating.current) return;
+    if (!loaded) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ conversations, activeId }));
     } catch {
       // Storage unavailable/full — history just won't persist this time.
     }
-  }, [conversations, activeId]);
+  }, [conversations, activeId, loaded]);
 
   const createConversation = () => {
     const fresh = freshConversation();

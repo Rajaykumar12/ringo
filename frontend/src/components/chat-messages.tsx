@@ -1,10 +1,25 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { IoSparkles, IoCopyOutline, IoCheckmark, IoPencilOutline, IoRefreshOutline, IoPlay, IoPause, IoMic } from 'react-icons/io5';
-import { Message } from '@/services/api';
+import { IoSparkles, IoCopyOutline, IoCheckmark, IoPencilOutline, IoRefreshOutline, IoPlay, IoPause, IoMic, IoClose } from 'react-icons/io5';
+import { Message, toImageUrl } from '@/services/api';
 import { useThemeColors } from '@/hooks/use-theme-colors';
 import { StreamingLiveRegion } from '@/components/streaming-live-region';
 import styles from './chat-messages.module.css';
+
+const MarkdownImage = (
+  { src, alt, onOpen }: { src?: string; alt?: string; onOpen: (src: string) => void }
+) => {
+  if (!src) return null;
+  const resolved = toImageUrl(src);
+  return (
+    <img
+      src={resolved}
+      alt={alt || ''}
+      className={styles.attachedImage}
+      onClick={() => onOpen(resolved)}
+    />
+  );
+};
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -34,6 +49,7 @@ export function ChatMessages({
   const Colors = useThemeColors();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+  const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     const el = containerRef.current;
@@ -88,13 +104,24 @@ export function ChatMessages({
                   ].join(' ')}
                 >
                   {message.imageUri && (
-                    <img src={message.imageUri} className={styles.attachedImage} alt="" />
+                    <img
+                      src={message.imageUri}
+                      className={styles.attachedImage}
+                      alt=""
+                      onClick={() => setLightboxSrc(message.imageUri!)}
+                    />
                   )}
 
                   {message.imageUris && message.imageUris.length > 0 && (
                     <div className={styles.attachedImageGrid}>
                       {message.imageUris.map((uri) => (
-                        <img key={uri} src={uri} className={styles.attachedImage} alt="" />
+                        <img
+                          key={uri}
+                          src={uri}
+                          className={styles.attachedImage}
+                          alt=""
+                          onClick={() => setLightboxSrc(uri)}
+                        />
                       ))}
                     </div>
                   )}
@@ -106,7 +133,15 @@ export function ChatMessages({
                   ) : (
                     <>
                       <div className={`${styles.markdown} ${styles.bubbleTextAI}`}>
-                        <ReactMarkdown>{message.text}</ReactMarkdown>
+                        <ReactMarkdown
+                          components={{
+                            img: ({ src, alt }) => (
+                              <MarkdownImage src={src} alt={alt} onOpen={setLightboxSrc} />
+                            ),
+                          }}
+                        >
+                          {message.text}
+                        </ReactMarkdown>
                       </div>
                       <StreamingLiveRegion text={message.text} active={isLastAI && isLoading} />
                     </>
@@ -186,6 +221,24 @@ export function ChatMessages({
           );
         })}
       </div>
+
+      {lightboxSrc && (
+        <div
+          className={styles.lightboxBackdrop}
+          role="presentation"
+          onClick={() => setLightboxSrc(null)}
+        >
+          <button
+            type="button"
+            className={styles.lightboxClose}
+            aria-label="Close image"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <IoClose size={22} color="#FFF" />
+          </button>
+          <img src={lightboxSrc} className={styles.lightboxImage} alt="" onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }
