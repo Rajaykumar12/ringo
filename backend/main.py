@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from pipeline import PipelineOrchestrator, QueryRefiner, TranscriptionError
+from pipeline import PipelineOrchestrator, TranscriptionError
 from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
@@ -71,7 +71,7 @@ def _require_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline
-    logger.info("Starting Multilingual AI Chat Server")
+    logger.info("Starting AI Chat Server")
     try:
         initialize_rag()
     except Exception as e:
@@ -95,7 +95,7 @@ def _rate_limit_key(request: Request) -> str:
 
 limiter = Limiter(key_func=_rate_limit_key)
 
-app = FastAPI(title="Multilingual AI Chat API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="AI Chat API", version="2.0.0", lifespan=lifespan)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -133,7 +133,7 @@ app.add_middleware(
 async def root():
     return {
         "status": "healthy",
-        "service": "Multilingual AI Chat API",
+        "service": "AI Chat API",
         "version": "2.0.0",
         "endpoints": ["/chat/text", "/chat/audio", "/feedback", "/health", "/health/live", "/documents/refresh"],
     }
@@ -211,7 +211,6 @@ async def text_chat(
     request: Request,
     background_tasks: BackgroundTasks,
     message: str = Form(...),
-    language: Optional[str] = Form(None),
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
@@ -225,12 +224,6 @@ async def text_chat(
         async def stream_response():
             if not rag_system:
                 await asyncio.to_thread(initialize_rag)
-
-            lang = QueryRefiner().detect_language(message) if not language else language
-            lang_map = {"en": "English", "hi": "Hindi", "ta": "Tamil", "te": "Telugu"}
-            lang_name = lang_map.get(lang, "English")
-
-            yield f"data: {json.dumps({'type': 'language', 'value': lang})}\n\n"
 
             if not rag_system.vectorstore:
                 yield f"data: {json.dumps({'type': 'content', 'value': 'No documents indexed.'})}\n\n"
@@ -255,7 +248,7 @@ async def text_chat(
             full_response = ""
             try:
                 async for chunk in chain.astream(
-                    {"context": context, "question": message, "language": lang_name},
+                    {"context": context, "question": message},
                     config={"configurable": {"session_id": session_id}},
                 ):
                     if not isinstance(chunk, str):
@@ -266,7 +259,7 @@ async def text_chat(
                 logger.error("[stream_response] LLM streaming error: %s: %s", type(e).__name__, e)
                 yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
-            log_id, partition_key = log_rag_call(message, full_response, sources, lang, 0, context, model_tier=model_tier)
+            log_id, partition_key = log_rag_call(message, full_response, sources, 0, context, model_tier=model_tier)
             asyncio.get_running_loop().run_in_executor(
                 None, _eval_and_update, log_id, partition_key, message, context, full_response
             )
@@ -278,12 +271,12 @@ async def text_chat(
     # Non-streaming
     try:
         start = time.time()
-        result = await asyncio.to_thread(pipeline.process_text, message, language, session_id=session_id)
+        result = await asyncio.to_thread(pipeline.process_text, message, session_id=session_id)
         latency_ms = int((time.time() - start) * 1000)
         context = result.pop("context", "")
         log_id, partition_key = log_rag_call(
             message, result["response"], result.get("sources", []),
-            result.get("language", "en"), latency_ms, context,
+            latency_ms, context,
             model_tier=result.get("model_tier", "default"),
         )
         background_tasks.add_task(
@@ -355,7 +348,6 @@ async def audio_chat(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    language: Optional[str] = Form(None),
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
@@ -378,7 +370,7 @@ async def audio_chat(
         start = time.time()
         result = await asyncio.to_thread(
             pipeline.process_audio,
-            audio_bytes, file.content_type or "audio/wav", language,
+            audio_bytes, file.content_type or "audio/wav",
             return_audio=False, session_id=session_id
         )
         latency_ms = int((time.time() - start) * 1000)
@@ -386,7 +378,7 @@ async def audio_chat(
         query = result.get("query", "")
         log_id, partition_key = log_rag_call(
             query, result["response"],
-            result.get("sources", []), result.get("language", "en"), latency_ms, context
+            result.get("sources", []), latency_ms, context
         )
         background_tasks.add_task(
             _eval_and_update, log_id, partition_key, query, context, result["response"]
@@ -429,12 +421,11 @@ async def submit_feedback(
 async def generate_tts(
     request: Request,
     text: str = Form(...),
-    language: str = Form("en"),
 ):
     if len(text) > MAX_TTS_LENGTH:
         raise HTTPException(status_code=413, detail=f"Text too long (max {MAX_TTS_LENGTH} characters)")
     try:
-        retrieval_result = {"response": text, "language": language}
+        retrieval_result = {"response": text}
         audio_data = pipeline.response_generator.generate_audio(retrieval_result)
         return JSONResponse(content={
             "success": True,
