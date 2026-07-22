@@ -5,10 +5,8 @@ import { useThemeColors } from '@/hooks/use-theme-colors';
 import { useAppSettings } from '@/hooks/use-app-settings';
 import { useConversations } from '@/hooks/use-conversations';
 import { useNetworkStatus } from '@/hooks/use-network-status';
-import { useTranslation } from '@/hooks/use-translation';
 import { ChatMessages } from '@/components/chat-messages';
 import { ChatInput, AttachedImage } from '@/components/chat-input';
-import { LanguageSelector, Language } from '@/components/language-selector';
 import { DocumentsPanel } from '@/components/documents-panel';
 import { ConversationsPanel } from '@/components/conversations-panel';
 import { HeaderMenu } from '@/components/header-menu';
@@ -18,35 +16,18 @@ import {
 } from '@/services/api';
 import styles from './ChatPage.module.css';
 
-const SPEECH_LANG: Record<string, string> = {
-  en: 'en-US',
-  hi: 'hi-IN',
-  ta: 'ta-IN',
-  te: 'te-IN',
-};
-
 export default function ChatPage() {
   const navigate = useNavigate();
   const Colors = useThemeColors();
-  const { defaultLanguage, streamingEnabled, loaded: settingsLoaded } = useAppSettings();
+  const { streamingEnabled } = useAppSettings();
   const { isOnline } = useNetworkStatus();
-  const { t } = useTranslation();
   const {
     activeId, activeConversation, loaded: conversationsLoaded, updateActiveMessages,
   } = useConversations();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState<Language | 'auto'>('auto');
   const useStreaming = streamingEnabled;
-
-  // Apply the persisted default language once settings finish loading, without
-  // overriding a manual in-session selection made before that (dependency is
-  // intentionally just `settingsLoaded`, not `defaultLanguage`).
-  useEffect(() => {
-    if (settingsLoaded) setSelectedLanguage(defaultLanguage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settingsLoaded]);
 
   // Session ID ties requests to the active conversation's backend-side memory.
   const sessionId = activeConversation?.sessionId ?? 'default';
@@ -55,7 +36,7 @@ export default function ChatPage() {
   const [showHistory, setShowHistory] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [initStatus, setInitStatus] = useState(t('app.initializing'));
+  const [initStatus, setInitStatus] = useState('System initializing...');
   const [editingText, setEditingText] = useState('');
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -78,18 +59,17 @@ export default function ChatPage() {
         const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(10000) });
         const data = await res.json();
         if (data.vector_store === 'ready') {
-          setInitStatus(t('app.ready'));
+          setInitStatus('Ready');
         } else {
-          setInitStatus(t('app.readyNoDocuments'));
+          setInitStatus('System ready (no documents indexed)');
         }
       } catch {
-        setInitStatus(t('app.backendUnavailable'));
+        setInitStatus('Backend unavailable — check your connection');
       } finally {
         setIsInitializing(false);
       }
     };
     checkHealth();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Audio playback state
@@ -108,7 +88,7 @@ export default function ChatPage() {
   };
 
   // Audio control functions
-  const playMessageAudio = async (messageId: string, messageText: string, messageLang: string, cachedAudioData?: string) => {
+  const playMessageAudio = async (messageId: string, messageText: string, cachedAudioData?: string) => {
     try {
       let audioData = cachedAudioData;
 
@@ -117,11 +97,11 @@ export default function ChatPage() {
         setPlayingMessageId(messageId);
 
         try {
-          const ttsResponse = await generateTTS(messageText, messageLang);
+          const ttsResponse = await generateTTS(messageText);
           audioData = ttsResponse.audio_data || undefined;
 
           if (!audioData) {
-            window.alert(t('audio.generateError'));
+            window.alert('Failed to generate audio');
             setIsGeneratingTTS(false);
             setPlayingMessageId(null);
             return;
@@ -134,7 +114,7 @@ export default function ChatPage() {
           ));
         } catch (error) {
           console.error('TTS generation failed:', error);
-          window.alert(t('audio.generateError'));
+          window.alert('Failed to generate audio');
           setIsGeneratingTTS(false);
           setPlayingMessageId(null);
           return;
@@ -171,7 +151,7 @@ export default function ChatPage() {
       await audio.play();
     } catch (error) {
       console.error('Error playing audio:', error);
-      window.alert(t('audio.playError'));
+      window.alert('Failed to play audio');
       setIsGeneratingTTS(false);
     }
   };
@@ -228,7 +208,6 @@ export default function ChatPage() {
       } else if (useStreaming) {
         const aiMessageId = (Date.now() + 1).toString();
         let streamedText = '';
-        let detectedLang = selectedLanguage;
 
         const aiMessage: Message = {
           id: aiMessageId,
@@ -241,9 +220,7 @@ export default function ChatPage() {
         await sendTextMessageStream(
           text,
           (chunk: { type: string; value: string; sources?: string[] }) => {
-            if (chunk.type === 'language') {
-              detectedLang = chunk.value as Language;
-            } else if (chunk.type === 'sources') {
+            if (chunk.type === 'sources') {
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === aiMessageId ? { ...msg, sources: chunk.sources ?? [] } : msg
@@ -266,19 +243,17 @@ export default function ChatPage() {
               }
               if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(streamedText);
-                utterance.lang = SPEECH_LANG[detectedLang] ?? SPEECH_LANG.en;
+                utterance.lang = 'en-US';
                 window.speechSynthesis.speak(utterance);
               }
             }
           },
-          selectedLanguage === 'auto' ? undefined : selectedLanguage,
           sessionId,
           controller.signal
         );
       } else {
         const response = await sendTextMessage(
           text,
-          selectedLanguage === 'auto' ? undefined : selectedLanguage,
           false,
           sessionId,
           controller.signal
@@ -289,7 +264,6 @@ export default function ChatPage() {
           text: response.response,
           sender: 'ai',
           timestamp: new Date(),
-          language: response.language,
           sources: response.sources,
         };
         setMessages((prev) => [...prev, aiMessage]);
@@ -299,9 +273,9 @@ export default function ChatPage() {
       if (!wasStopped) {
         console.error('Error sending text:', error);
         if (error instanceof OfflineError || !isOnline) {
-          window.alert(t('offline.message'));
+          window.alert('Reconnect and try again.');
         } else {
-          window.alert(t('chat.sendTextError'));
+          window.alert('Failed to send message. Check your connection and API URL.');
         }
       }
     } finally {
@@ -367,12 +341,12 @@ export default function ChatPage() {
       setIsRecording(true);
 
       recordingTimeoutRef.current = setTimeout(() => {
-        window.alert(t('recording.limitMessage'));
+        window.alert('Maximum recording length is 2 minutes.');
         stopRecordingAndSend();
       }, MAX_RECORDING_MS);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      window.alert(t('recording.startError'));
+      window.alert('Failed to start recording');
     }
   };
 
@@ -399,14 +373,14 @@ export default function ChatPage() {
       mediaStreamRef.current = null;
 
       if (!blob.size) {
-        window.alert(t('recording.noAudio'));
+        window.alert('No audio recorded');
         return;
       }
       const uri = URL.createObjectURL(blob);
 
       const userMessage: Message = {
         id: Date.now().toString(),
-        text: t('chat.voiceMessage'),
+        text: 'Voice message',
         sender: 'user',
         timestamp: new Date(),
         isAudio: true,
@@ -415,7 +389,6 @@ export default function ChatPage() {
 
       const response = await sendAudioMessage(
         uri,
-        selectedLanguage === 'auto' ? undefined : selectedLanguage,
         false,
         sessionId
       );
@@ -436,15 +409,14 @@ export default function ChatPage() {
         text: response.responseText,
         sender: 'ai',
         timestamp: new Date(),
-        language: response.language,
       };
       setMessages((prev) => [...prev, aiMessage]);
     } catch (error) {
       console.error('Error sending audio:', error);
       if (error instanceof OfflineError || !isOnline) {
-        window.alert(t('offline.message'));
+        window.alert('Reconnect and try again.');
       } else {
-        window.alert(t('chat.sendAudioError'));
+        window.alert('Failed to send audio. Check your connection and API URL.');
       }
     } finally {
       setIsLoading(false);
@@ -484,23 +456,23 @@ export default function ChatPage() {
             type="button"
             onClick={() => setShowMenu(true)}
             className={styles.iconBtn}
-            aria-label={t('app.menu')}
+            aria-label="Menu"
           >
             <IoMenuOutline size={18} color={Colors.amber} />
           </button>
         </div>
 
-        <h1 className={styles.title}>{t('app.title')}</h1>
+        <h1 className={styles.title}>AI Chat</h1>
 
         <div className={styles.headerControls}>
-          <LanguageSelector selectedLanguage={selectedLanguage} onSelectLanguage={setSelectedLanguage} />
+          <div className={styles.iconBtn} style={{ visibility: 'hidden' }} />
         </div>
       </div>
 
       {!isOnline && (
         <div className={styles.offlineBanner} aria-live="polite">
           <IoCloudOfflineOutline size={14} color={Colors.textMuted} />
-          <span className={styles.offlineBannerText}>{t('offline.banner')}</span>
+          <span className={styles.offlineBannerText}>You're offline</span>
         </div>
       )}
 

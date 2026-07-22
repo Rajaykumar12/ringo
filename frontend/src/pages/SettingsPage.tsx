@@ -1,43 +1,36 @@
 import { useNavigate } from 'react-router-dom';
-import { IoClose, IoPhonePortraitOutline, IoSunnyOutline, IoMoonOutline, IoCheckmark, IoStatsChartOutline, IoChevronForward } from 'react-icons/io5';
+import { IoClose, IoPhonePortraitOutline, IoSunnyOutline, IoMoonOutline, IoStatsChartOutline, IoChevronForward } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { useThemeColors } from '@/hooks/use-theme-colors';
 import { useAppSettings, ThemeMode } from '@/hooks/use-app-settings';
-import { LANGUAGES, Language } from '@/components/language-selector';
-import { useTranslation } from '@/hooks/use-translation';
 import styles from './SettingsPage.module.css';
-
-const UI_LANGUAGES = LANGUAGES.filter((l): l is typeof LANGUAGES[number] & { code: Exclude<Language, 'auto'> } => l.code !== 'auto');
 
 export default function SettingsPage() {
   const navigate = useNavigate();
   const Colors = useThemeColors();
-  const { t } = useTranslation();
   const {
     themeMode, setThemeMode,
-    defaultLanguage, setDefaultLanguage,
-    uiLanguage, setUiLanguage,
     streamingEnabled, setStreamingEnabled,
   } = useAppSettings();
 
   const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: IconType }[] = [
-    { mode: 'system', label: t('settings.themeSystem'), icon: IoPhonePortraitOutline },
-    { mode: 'light', label: t('settings.themeLight'), icon: IoSunnyOutline },
-    { mode: 'dark', label: t('settings.themeDark'), icon: IoMoonOutline },
+    { mode: 'system', label: 'System', icon: IoPhonePortraitOutline },
+    { mode: 'light', label: 'Light', icon: IoSunnyOutline },
+    { mode: 'dark', label: 'Dark', icon: IoMoonOutline },
   ];
 
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <button type="button" onClick={() => navigate(-1)} className={styles.closeBtn} aria-label={t('settings.close')}>
+        <button type="button" onClick={() => navigate(-1)} className={styles.closeBtn} aria-label="Close settings">
           <IoClose size={20} color={Colors.textMuted} />
         </button>
-        <h1 className={styles.title}>{t('settings.title')}</h1>
+        <h1 className={styles.title}>Settings</h1>
         <div className={styles.closeBtn} style={{ visibility: 'hidden' }} />
       </div>
 
       <div className={styles.content}>
-        <div className={styles.sectionLabel}>{t('settings.appearance')}</div>
+        <div className={styles.sectionLabel}>Appearance</div>
         <div className={styles.card}>
           <div className={styles.segmented}>
             {THEME_OPTIONS.map((opt) => {
@@ -61,68 +54,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className={styles.sectionLabel}>{t('settings.defaultLanguage')}</div>
-        <div className={styles.card}>
-          {LANGUAGES.map((lang) => {
-            const selected = defaultLanguage === lang.code;
-            return (
-              <button
-                type="button"
-                key={lang.code}
-                className={`${styles.row} ${selected ? styles.rowSelected : ''}`}
-                onClick={() => setDefaultLanguage(lang.code)}
-                aria-label={`${lang.name}${selected ? ', selected' : ''}`}
-                role="radio"
-                aria-checked={selected}
-              >
-                <span className={styles.rowCode}>{lang.shortCode}</span>
-                <span className={styles.rowText}>
-                  <span className={`${styles.rowName} ${selected ? styles.rowNameSelected : ''}`}>{lang.nativeName}</span>
-                  <span className={styles.rowSub}>{lang.name}</span>
-                </span>
-                {selected && <IoCheckmark size={16} color={Colors.amber} />}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className={styles.sectionLabel}>{t('settings.uiLanguage')}</div>
-        <div className={styles.card}>
-          {UI_LANGUAGES.map((lang) => {
-            const selected = uiLanguage === lang.code;
-            return (
-              <button
-                type="button"
-                key={lang.code}
-                className={`${styles.row} ${selected ? styles.rowSelected : ''}`}
-                onClick={() => setUiLanguage(lang.code)}
-                aria-label={`${lang.name}${selected ? ', selected' : ''}`}
-                role="radio"
-                aria-checked={selected}
-              >
-                <span className={styles.rowCode}>{lang.shortCode}</span>
-                <span className={styles.rowText}>
-                  <span className={`${styles.rowName} ${selected ? styles.rowNameSelected : ''}`}>{lang.nativeName}</span>
-                  <span className={styles.rowSub}>{lang.name}</span>
-                </span>
-                {selected && <IoCheckmark size={16} color={Colors.amber} />}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className={styles.sectionLabel}>{t('settings.responses')}</div>
+        <div className={styles.sectionLabel}>Responses</div>
         <div className={styles.card}>
           <div className={styles.switchRow}>
             <div className={styles.switchLabelWrap}>
-              <div className={styles.switchLabel}>{t('settings.streamResponses')}</div>
-              <div className={styles.switchSub}>{t('settings.streamResponsesSub')}</div>
+              <div className={styles.switchLabel}>Stream responses</div>
+              <div className={styles.switchSub}>Show the AI's reply as it's generated, token by token.</div>
             </div>
             <button
               type="button"
               role="switch"
               aria-checked={streamingEnabled}
-              aria-label={t('settings.streamResponses')}
+              aria-label="Stream responses"
               className={`${styles.switch} ${streamingEnabled ? styles.switchOn : ''}`}
               onClick={() => setStreamingEnabled(!streamingEnabled)}
             >
@@ -131,18 +74,18 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <div className={styles.sectionLabel}>{t('settings.advanced')}</div>
+        <div className={styles.sectionLabel}>Advanced</div>
         <div className={styles.card}>
           <button
             type="button"
             className={styles.row}
             onClick={() => navigate('/admin')}
-            aria-label={t('settings.adminDashboard')}
+            aria-label="Admin dashboard"
           >
             <IoStatsChartOutline size={18} color={Colors.textMuted} />
             <span className={styles.rowText}>
-              <span className={styles.rowName}>{t('settings.adminDashboard')}</span>
-              <span className={styles.rowSub}>{t('settings.adminDashboardSub')}</span>
+              <span className={styles.rowName}>Admin dashboard</span>
+              <span className={styles.rowSub}>RAG call volume, latency, ratings, eval scores</span>
             </span>
             <IoChevronForward size={16} color={Colors.textFaint} />
           </button>
