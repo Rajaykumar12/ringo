@@ -2,6 +2,8 @@
 
 Companion to `AUDIT_REPORT.md` (security/correctness). This report covers where the app is falling behind modern AI chat products, what features are worth adding, and what performance/engineering optimizations are available. Research-only — no code changes. Impact/Effort ratings are rough guides for prioritization, not estimates.
 
+This is a point-in-time audit snapshot; it isn't kept in sync as items ship. `CAPABILITY_EXPANSION.md` is the actively-maintained tracker for retrieval-quality and RAG-capability work that followed this roadmap (query rewriting, groundedness gating, chunking tuning, broader ingestion, inline citations, and further planned steps).
+
 ---
 
 ## 1. Executive summary
@@ -59,7 +61,7 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 - **Image input** (paste/attach) leveraging Groq's vision-capable models.
 - **Dark mode toggle** — cheap win given existing scaffolding.
 - **Settings screen** (theme, text size, streaming toggle).
-- **Inline source-chunk highlighting** in the response itself, extending the existing "Source Preview" feature beyond a flat source list.
+- ~~**Inline source-chunk highlighting** in the response itself, extending the existing "Source Preview" feature beyond a flat source list.~~ **Done** — see `CAPABILITY_EXPANSION.md` Step 6. (Turned out there was no existing "Source Preview" UI to extend — `sources` was tracked in state but never rendered; this built inline `[n]` citation badges + an expandable source-chip strip from scratch.)
 - **Export/share a conversation** (markdown or PDF).
 - **Admin/analytics dashboard** surfacing the RAG logs already being collected locally (`rag_logger.py`/`local_store.py`) — currently write-only; nothing reads this data back today.
 - **Cross-encoder re-ranking** for retrieval quality — same item as the backend gap above, framed as a quality feature.
@@ -89,7 +91,7 @@ Net-new product ideas, distinct from the gap list above (some directly close a g
 | 17 | Model routing by query complexity | Low-Med | Med | Backend | **Done** |
 | 18 | i18n for UI chrome | Low | Med | Frontend | **Reverted** — multilanguage support (hi/ta/te) was removed; the app is now English-only by design |
 | 19 | Accessibility improvements | Low | Med | Frontend | **Done** (accessibilityRole audit, modal focus/labeling, throttled streaming live-region — dynamic font scaling split out as a follow-up, see below) |
-| 20 | Broader document format support (DOCX/XLSX/CSV/HTML) | Low | Med | Backend | Pending |
+| 20 | Broader document format support (DOCX/XLSX/CSV/HTML) | Low | Med | Backend | **Done** |
 | 21 | Singleton → multi-worker/replica-safe architecture | High* | High | Backend | Pending |
 
 \* High impact only once actual horizontal scaling is needed — not urgent at current single-tenant scale.

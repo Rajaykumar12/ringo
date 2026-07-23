@@ -12,9 +12,9 @@ This project delivers a robust AI chat experience, leveraging:
 - **Groq vision model** for image-aware chat
 - **HuggingFace** (`all-MiniLM-L6-v2`) for local semantic embeddings
 - **ChromaDB** for persistent vector storage
-- **PyMuPDF** for high-fidelity PDF parsing with per-page chunking
+- **PyMuPDF / python-docx / BeautifulSoup / openpyxl** for parsing PDF, PPTX, DOCX, HTML, CSV, and XLSX documents
 - **Tesseract OCR** for extracting text from embedded images in documents
-- **BM25 + Semantic hybrid search** via `EnsembleRetriever`, refined by a **cross-encoder reranker**
+- **BM25 + Semantic hybrid search** via `EnsembleRetriever`, with LLM-generated query rewriting to widen recall, refined by a **cross-encoder reranker**
 - **OpenAI Whisper** for local audio transcription
 - **edge-tts** for high-quality TTS generation
 - **Redis** for persistent conversation memory and response caching
@@ -29,16 +29,20 @@ Fully self-hostable: no cloud vendor lock-in — documents, images, and analytic
 ## Features
 
 - **Y-Shaped Pipeline** — Unified processing for text and audio inputs
+- **Query Rewriting** — Vague or multi-part queries are expanded into alternate phrasings (fast-tier Groq model) before retrieval, widening hybrid-search recall; skipped for structural/short queries (`ENABLE_QUERY_REWRITE`)
 - **Hybrid RAG with Reranking** — BM25 keyword search (40%) + semantic search (60%) via `EnsembleRetriever` (k=30 per retriever), merged and reranked by a cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) down to the top 10 most relevant chunks
+- **Paragraph/Heading-Aware Chunking** — Long PDF, DOCX, and HTML content is split on paragraph and heading boundaries rather than blind character windows, so a topic shift doesn't get folded into the wrong chunk
 - **Document Structure Indexing** — TOC, chapter headings, and slide titles extracted at ingestion as dedicated structure chunks; injected automatically for structural queries ("what sections are in this book?")
+- **Broader Document Ingestion** — PDF, PPTX, Markdown, DOCX, HTML, CSV, and XLSX; spreadsheet rows are flattened into row-windowed chunks (header repeated per chunk) so they're searchable via the same hybrid retriever
 - **Metadata-Enriched Context** — Retrieved chunks carry `[Source: file.pdf, Page N]` headers so the LLM can reason about document layout and location
+- **Inline Grounded Citations** — Responses cite `[n]` markers tied to the specific retrieved chunk used; the frontend renders them as clickable badges linking to an expandable source-chip strip (filename, page/slide, chunk preview). Hallucinated citation numbers are stripped server-side — validated incrementally even mid-stream, not just on the final aggregate
+- **Groundedness Caveat** — Responses generated with zero matching retrieved context are flagged with an inline note that the answer may not be grounded in your documents
 - **Image-Aware Indexing** — OCR extracts text from figures, charts, and diagrams in PDFs/PPTX; the images themselves are also extracted and persisted, so they can be shown back in the chat UI
 - **Image Chat** — Upload an image directly for vision-model Q&A; follow-up text messages that reference "that image/picture/photo" are automatically routed back to the vision model using the session's last upload
 - **LaTeX Normalization** — Regex-based math notation conversion before embedding
 - **Model Tiering** — Short, simple, or early-conversation queries are automatically routed to a faster Groq model; longer or structural queries use the full model
 - **Response Caching** — Exact-match Redis cache for first-turn queries, avoiding redundant LLM calls
 - **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
-- **Source Preview** — Inspect the exact document chunks used to generate each answer
 - **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production)
 - **Conversation Memory** — Redis-backed session history with in-memory fallback
 - **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
@@ -52,32 +56,33 @@ Fully self-hostable: no cloud vendor lock-in — documents, images, and analytic
 ### Backend Pipeline (4-stage Y-shape)
 
 1. **Input Processing** — text preprocessing / Whisper audio transcription / direct image input
-2. **Query Refinement** — query formatting, model-tier selection (fast vs. default Groq model)
-3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search, cross-encoder reranking, structure-chunk injection for structural queries; deduplication and metadata-enriched context assembly
-4. **Response Generation** — Groq LLM (tiered) via LCEL chain with session history, backed by a first-turn exact-match response cache
+2. **Query Refinement** — query formatting, LLM-generated query rewriting to widen retrieval recall, model-tier selection (fast vs. default Groq model)
+3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search (original query + rewrites), cross-encoder reranking, structure-chunk injection for structural queries; deduplication, citation-numbered metadata-enriched context assembly
+4. **Response Generation** — Groq LLM (tiered) via LCEL chain with session history, backed by a first-turn exact-match response cache; response is sanitized to strip hallucinated `[n]` citations/image markers (validated incrementally as it streams) and flagged with a groundedness caveat if no context was retrieved
 
 ### RAG Document Pipeline
 
 ```
-PDF / PPTX / MD
+PDF / PPTX / MD / DOCX / HTML / CSV / XLSX
        ↓
   Structure extraction (TOC / headings / slide titles) → structure chunk
        ↓
-  PyMuPDF parse (per-page)
+  Parse: PyMuPDF (PDF, per-page) / python-pptx / python-docx / BeautifulSoup (HTML) / csv+openpyxl (tabular)
        ↓
-  Image extraction → Tesseract OCR + persisted to disk (image_ids on chunk metadata)
+  Image extraction (PDF/PPTX) → Tesseract OCR + persisted to disk (image_ids on chunk metadata)
        ↓
   LaTeX normalization (latex_utils.py)
        ↓
-  Per-type chunking (PDF: 800 chars, MD: 600 chars, PPTX: 1 per slide)
+  Per-type chunking — paragraph/heading-aware packing (PDF/DOCX/HTML, ~800 chars),
+  character splitting (MD, 600 chars), 1/slide (PPTX), row-windowed (CSV/XLSX, 20 rows/chunk)
        ↓
   ChromaDB (semantic, k=30) + BM25 index (k=30)
        ↓
-  EnsembleRetriever (0.4 BM25 / 0.6 semantic)
+  Query rewriting (fast-tier Groq model generates alternate phrasings) → EnsembleRetriever (0.4 BM25 / 0.6 semantic) per query variant
        ↓
   Cross-encoder rerank → top 10
        ↓
-  Deduplication → structural query routing → metadata-enriched context (+ up to 4 linked images)
+  Deduplication → structural query routing → citation-numbered, metadata-enriched context (+ up to 4 linked images)
 ```
 
 ### Image Chat Path
@@ -140,6 +145,7 @@ OCR is optional — the system falls back gracefully if Tesseract is not install
 | `IMAGE_LINKS_DB_PATH` | No | `backend/data/image_links.db` | SQLite DB linking uploaded images to sessions (powers "that image" follow-ups) |
 | `RERANK_MODEL` | No | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used to rerank hybrid retrieval results |
 | `RERANK_TOP_N` | No | `10` | Number of chunks kept after reranking |
+| `ENABLE_QUERY_REWRITE` | No | `true` | Generates alternate query phrasings before retrieval to widen recall; costs one extra fast-tier Groq call per non-trivial query |
 | `RESPONSE_CACHE_TTL_SECONDS` | No | `3600` | TTL for the first-turn exact-match response cache (Redis) |
 | `ENABLE_RAG_EVAL` | No | `false` | Enables LLM-as-judge scoring of RAG responses |
 | `MAX_MESSAGE_LENGTH` | No | `1000` | Max chat message characters |
@@ -160,8 +166,8 @@ ringo/
 ├── backend/
 │   ├── main.py              # FastAPI server, rate limiting, all endpoints
 │   ├── pipeline.py          # Y-shaped pipeline orchestrator
-│   ├── rag.py               # RAG singleton, reranking, response cache, model tiering
-│   ├── vectorstore.py       # PyMuPDF, OCR, image extraction, BM25+semantic hybrid retrieval
+│   ├── rag.py               # RAG singleton, query rewriting, reranking, citation/image sanitization, response cache, model tiering
+│   ├── vectorstore.py       # PDF/PPTX/DOCX/HTML/CSV/XLSX loaders, OCR, image extraction, chunking, BM25+semantic hybrid retrieval
 │   ├── latex_utils.py       # LaTeX/math notation normalization
 │   ├── memory.py            # Redis / in-memory conversation history
 │   ├── document_store.py    # Local filesystem document storage (upload/delete)
@@ -174,7 +180,7 @@ ringo/
 │   ├── vision.py            # Groq vision model — backs /chat/image and image follow-ups
 │   ├── eval.py               # LLM-as-judge RAG response evaluation (ENABLE_RAG_EVAL)
 │   ├── requirements.txt
-│   ├── documents/           # Knowledge base files (PDF/PPTX/MD)
+│   ├── documents/           # Knowledge base files (PDF/PPTX/MD/DOCX/HTML/CSV/XLSX)
 │   └── data/                 # SQLite DBs (rag_logs.db, image_links.db) + images/
 │
 ├── frontend/

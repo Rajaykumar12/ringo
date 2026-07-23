@@ -1,12 +1,29 @@
 # Ringo — Capability Expansion: Implementation Plan
 
-Companion to `ROADMAP.md`/`AUDIT_REPORT.md`. This is a **sequenced build order** across Track A (deepen existing RAG/chat capability, no new UI) and Track B (net-new features), where each step is implemented so that later steps can build on it. Nothing here is implemented yet — this is the spec to work from.
+Companion to `ROADMAP.md`/`AUDIT_REPORT.md`. This is a **sequenced build order** across Track A (deepen existing RAG/chat capability, no new UI) and Track B (net-new features), where each step is implemented so that later steps can build on it.
 
 Steps are numbered 1→10 in the order they should be built. The ordering is deliberate:
 - A1→A4 harden the retrieval/response core that every later step (including all of Track B) depends on.
 - B1 (ingestion) and B3 (citations) are pulled forward because they're self-contained and don't need auth.
 - A5/A6 (durable storage, observability) are placed right before B4 (auth) because auth needs a real DB anyway — one migration, not two.
 - B2 (agentic tool-use) and B5 (cross-document synthesis) come last because they consume the query-rewriting (A1), citation (B3), and confidence-gating (A2) machinery built earlier.
+
+## Progress
+
+| Step | Status |
+|---|---|
+| 1 — Query rewriting / multi-query retrieval | **Done** |
+| 2 — Confidence / groundedness gating | **Done** |
+| 3 — Chunking strategy tuning | **Done** |
+| 4 — Retrieval-quality regression gate in CI | **Reverted** (by request — no CI test file or workflow currently in the repo) |
+| 5 — Broader document ingestion (DOCX/XLSX/CSV/HTML) | **Done** |
+| 6 — Inline grounded citations | **Done** (plus a follow-up fix: citations/image markers are now validated incrementally mid-stream, not just in the final SSE `done` event) |
+| 7 — Durable conversation storage | Pending |
+| 8 — Real user auth + per-user document libraries | Pending — flagged as a product-scope decision, not just engineering |
+| 9 — Agentic / tool-use layer | Pending |
+| 10 — Cross-document synthesis mode | Pending |
+
+Each "Done" step's write-up below is left as originally planned, with an added **Actual** note where the real implementation deviated from the plan.
 
 ---
 
@@ -26,6 +43,8 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 
 **Verification:** run `eval.py`'s judge (already returns faithfulness/context_relevance) before/after on a fixed set of ~10 queries against the current corpus; expect context_relevance to improve on vague/multi-part queries without regressing simple ones. This eval harness becomes the regression gate used again in Step 4.
 
+**Actual:** implemented as planned (`rag.py:rewrite_query`), with one deliberate deviation — item 4 (skip rewriting on a first-turn cache hit) wasn't built. The response cache key is derived from `query + context`, and context only exists *after* retrieval runs, so there's no way to check the cache before rewriting without restructuring the cache itself. Not worth it for a minor cost saving.
+
 ---
 
 ## Step 2 (A2) — Confidence / groundedness gating
@@ -40,6 +59,8 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 3. Do **not** block the response on the full LLM-judge score synchronously (it already runs async for a reason — latency). Keep the inline gate cheap/heuristic-only; the LLM-judge stays a post-hoc quality signal surfaced in admin, not a runtime gate.
 
 **Verification:** manually check the admin dashboard after a batch of test queries (including a few deliberately out-of-corpus ones) and confirm low-faithfulness responses are flagged/visible.
+
+**Actual:** item 2 (write the async LLM-judge faithfulness score onto the log row, surface via `/admin/stats`) turned out to already exist in the codebase — `local_store.py`'s schema, `rag_logger.update_eval_scores()`, and `admin.py`'s aggregation were already wired end-to-end, just not mentioned as such anywhere. Only item 1 needed building: `rag.py:_append_caveat_if_low_context()` appends a groundedness note to the response whenever retrieval returned zero chunks, applied after the raw response is stored to conversation history (so the caveat itself never becomes part of what the model "remembers" saying).
 
 ---
 
@@ -56,6 +77,8 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 
 **Verification:** same eval harness from Step 1, run against a long-form PDF in the corpus; compare context_relevance before/after re-indexing.
 
+**Actual:** implemented as planned — `vectorstore.py:_split_into_paragraphs`/`_looks_like_heading`/`_pack_paragraphs` replace the flat `RecursiveCharacterTextSplitter` for long PDF pages, packing whole paragraphs up to ~800 chars and always starting a new chunk at a detected heading rather than folding a topic shift onto the previous chunk. Step 5 later reused this via a shared `_chunk_prose_document()` helper for DOCX/HTML too. **Action needed**: this re-chunks PDFs, so already-indexed corpora need `POST /documents/refresh` to pick it up — not automatic.
+
 ---
 
 ## Step 4 (A7) — Retrieval-quality regression gate in CI
@@ -70,6 +93,8 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 3. Wire into the existing CI test job (`ROADMAP.md` item 6, already done) as an additional test file — no new CI infrastructure needed, just a new test.
 
 **Verification:** intentionally break something trivial (e.g. drop the reranker) locally and confirm the test fails.
+
+**Actual: reverted by request.** This was implemented once — `backend/tests/test_retrieval_quality.py` (11 query/expected-source cases against a 3-document fixture corpus, using the real hybrid retriever + reranker in an isolated temp ChromaDB dir) plus a new `.github/workflows/backend-tests.yml`, since no CI config existed anywhere in the repo despite `ROADMAP.md` claiming otherwise — then explicitly reverted. Neither the test file nor the workflow exists in the repo currently.
 
 ---
 
@@ -89,6 +114,10 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 
 **Verification:** upload one file of each new type through the existing `/documents/upload` endpoint, confirm it's retrievable via a targeted query, confirm `/documents/list` and delete work unchanged.
 
+**Actual:** implemented as planned, including the "simple" tabular approach (row-windowed chunks, 20 rows/chunk, header repeated per chunk). Two things not called out in the original plan:
+- Two *additional* hardcoded extension allowlists existed beyond `vectorstore.py`'s `SUPPORTED_EXTENSIONS` — `document_store.py:ALLOWED_EXTENSIONS` and `main.py:SUPPORTED_UPLOAD_EXTENSIONS` — both gate uploads *before* they ever reach the loader code, so both needed updating too or new file types would be rejected at the API boundary.
+- Added `python-docx`, `beautifulsoup4`, `openpyxl` to `requirements.txt` (none were already a dependency, transitive or otherwise).
+
 ---
 
 ## Step 6 (B3) — Inline grounded citations
@@ -104,6 +133,12 @@ Steps are numbered 1→10 in the order they should be built. The ordering is del
 4. Frontend: in `ChatPage.tsx`, parse `[n]` markers in the rendered markdown (already rendering markdown per `ROADMAP.md` item 11 "Done") and link them to the existing source-preview UI, keyed by index instead of a flat list.
 
 **Verification:** ask a question spanning 2+ source chunks, confirm citation numbers in the response match the right source preview entries; ask a question with no good context and confirm no citations are hallucinated (reuse Step 4's regression harness with a citation-accuracy check added).
+
+**Actual:** the plan's framing — "make what's already tracked visible per-claim" — turned out to be wrong: there was no existing source-preview UI to extend. `sources` was captured into `Message` state but never rendered anywhere in the frontend, and `getDocumentChunks()`/`GET /documents/chunks` was dead, uncalled code, despite the README listing "Source Preview" as a shipped feature. This step built the UI from scratch instead of extending one.
+
+Otherwise implemented as planned: `_build_source_citations()` replaces the old deduped-by-filename flat list with one structured `{index, filename, page, slide, preview}` entry per chunk; `_sanitize_citations()` strips hallucinated `[n]` markers; the citation-numbered context + prompt instruction lives in `vectorstore.py:_wrap_chain`. Frontend renders `[n]` as clickable badges (via a markdown-link rewrite trick) linking to an expandable source-chip strip with the chunk preview text. Verified live against the real indexed corpus, not just unit tests — the model correctly cited only the chunks it actually used and never fabricated a citation for an unused one.
+
+**Follow-up fix (same step, done after initial completion):** the streaming chat path originally sent raw LLM output chunk-by-chunk and only sanitized the *aggregate* response in the final SSE `done` event — meaning a hallucinated `[n]` or invalid image marker could flash on screen before cleanup. Fixed with `rag.py:_sanitize_stream_buffer()`/`_find_stream_cut()`: since retrieval (and therefore the valid citation/image-id set) is known before streaming starts, each chunk is now validated incrementally, holding back only the handful of characters that could still be an in-progress `[n]` or `![...]()` marker — everything else (including brackets/`!` that are provably *not* forming a marker) streams immediately with no added latency. Verified against a live stream: reconstructed the actual SSE chunks and confirmed every citation/image marker arrived as a single, complete, pre-validated unit, never split raw across a chunk boundary.
 
 ---
 
