@@ -5,7 +5,7 @@ Initializes the singleton instance and provides interface methods.
 import logging
 import os
 import re
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Optional, Tuple
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
 from response_cache import make_cache_key, get_cached_response, set_cached_response
@@ -162,7 +162,7 @@ def _collect_images(docs: List[Document], relevant_image_ids: set, limit: int = 
     return [f"/images/{i}" for i in seen]
 
 
-def _format_chunk(doc: Document, relevant_image_ids: set = frozenset()) -> str:
+def _format_chunk(doc: Document, relevant_image_ids: set = frozenset(), index: Optional[int] = None) -> str:
     meta = doc.metadata
     source = meta.get("source", "Unknown")
     if meta.get("chunk_type") == "structure":
@@ -173,12 +173,60 @@ def _format_chunk(doc: Document, relevant_image_ids: set = frozenset()) -> str:
         header = f"[Source: {source}, Slide {meta['slide']}]"
     else:
         header = f"[Source: {source}]"
+    if index is not None:
+        header = f"[{index}] {header}"
     lines = [header, doc.page_content]
     raw_ids = meta.get("image_ids", "")
     for img_id in raw_ids.split(","):
         if img_id and img_id in relevant_image_ids:
             lines.append(f"[Image available: /images/{img_id}]")
     return "\n".join(lines)
+
+
+def _build_source_citations(docs: List[Document]) -> List[Dict[str, Any]]:
+    """One entry per retrieved chunk, 1-indexed to match the "[n]" markers embedded in
+    the context by _format_chunk and the citation instructions in the system prompt
+    (vectorstore.py:_wrap_chain). Replaces the old flat, deduped-by-filename source list —
+    citations point at a specific chunk, not just "this file was involved somewhere"."""
+    citations = []
+    for i, d in enumerate(docs, start=1):
+        meta = d.metadata
+        citations.append({
+            "index": i,
+            "filename": meta.get("source", "Unknown"),
+            "page": meta.get("page") or None,
+            "slide": meta.get("slide") or None,
+            "preview": d.page_content[:200].strip(),
+        })
+    return citations
+
+
+def _citation_filenames(sources: List[Dict[str, Any]]) -> List[str]:
+    """Distinct filenames from a structured citation list, in first-seen order — for
+    plain-text logging (rag_logger stores a joined filename string, not structured data)."""
+    seen: List[str] = []
+    for s in sources:
+        fn = s.get("filename")
+        if fn and fn not in seen:
+            seen.append(fn)
+    return seen
+
+
+_CITATION_RE = re.compile(r"\[(\d+)\]")
+
+
+def _sanitize_citations(response: str, valid_indices: set) -> str:
+    """Strip any [n] citation marker the LLM emitted that doesn't correspond to an
+    actual numbered source chunk (hallucination guard — same reasoning as
+    _sanitize_and_filter_images for image ids)."""
+    def _strip_invalid(m: "re.Match") -> str:
+        try:
+            n = int(m.group(1))
+        except ValueError:
+            return m.group(0)
+        return m.group(0) if n in valid_indices else ""
+
+    return _CITATION_RE.sub(_strip_invalid, response)
 
 
 # Matches any markdown image pointing at /images/..., valid hex id or not — the model
@@ -201,6 +249,86 @@ def _sanitize_and_filter_images(response: str, images: List[str], valid_ids: set
     used_ids = set(_IMAGE_MD_RE.findall(clean_response))
     filtered_images = [img for img in images if img.rsplit("/", 1)[-1] not in used_ids]
     return clean_response, filtered_images
+
+
+# Combined pattern for the incremental streaming sanitizer below — image branch first
+# since it structurally contains a "[...]" too (the alt-text brackets), so it should
+# get first shot at matching before the bare-citation branch is tried at that position.
+_STREAM_PATTERN_RE = re.compile(
+    r"(?:!\[[^\]]*\]\(/images/(?P<img_id>[^)]+)\))|(?:\[(?P<cite_num>\d+)\])"
+)
+
+_STREAM_HOLDBACK_CAP = 200  # generous upper bound on "[n]" / "![](/images/<32 hex>)"
+
+
+def _find_stream_cut(tail: str) -> int:
+    """Position in `tail` (the text after the last fully-resolved pattern) up to which
+    it's safe to emit right now — i.e. contains no "[" or "!" that could still resolve
+    into a citation/image marker once more streamed text arrives. Scans left to right,
+    skipping past any "[" or "!" already provably NOT the start of such a pattern
+    (wrong next character), and only holding back when genuinely still-forming or when
+    there isn't enough lookahead yet to tell."""
+    i, n = 0, len(tail)
+    while i < n:
+        ch = tail[i]
+        if ch == "[":
+            j = i + 1
+            while j < n and tail[j].isdigit():
+                j += 1
+            if j == i + 1:
+                # "[" not (yet) followed by a digit
+                if j == n:
+                    return i  # "[" is the last char received so far — still ambiguous
+                i = j
+                continue
+            if j == n:
+                return i  # digits accumulating, no terminator yet — hold back
+            # A non-digit followed the digit run and it isn't "]" (a real "[n]" would
+            # already have been consumed by finditer before this function ever runs) —
+            # this can never become a valid citation now; resume scanning past it.
+            i = j
+            continue
+        if ch == "!":
+            if i + 1 >= n:
+                return i  # could still be followed by "[" once more data arrives
+            if tail[i + 1] == "[":
+                return i  # "![" forming — hold back for finditer to resolve once complete
+            i += 1
+            continue
+        i += 1
+    return n
+
+
+def _sanitize_stream_buffer(buffer: str, valid_citation_indices: set, valid_image_ids: set) -> Tuple[str, str]:
+    """Streaming-safe version of _sanitize_citations + _sanitize_and_filter_images:
+    resolves every complete [n]/image marker found so far in `buffer` (stripping
+    hallucinated ones, same validity rules as the non-streaming sanitizers) and holds
+    back any trailing text that could still be the start of an unfinished marker — e.g.
+    a chunk boundary landing between "[1" and "]" — so a hallucinated citation is never
+    shown to the client even for one frame. Returns (safe_text_to_emit, unresolved_tail);
+    the tail should be prepended to the next chunk before calling this again."""
+    parts = []
+    last_end = 0
+    for m in _STREAM_PATTERN_RE.finditer(buffer):
+        parts.append(buffer[last_end:m.start()])
+        img_id = m.group("img_id")
+        if img_id is not None:
+            if _VALID_ID_RE.match(img_id) and img_id in valid_image_ids:
+                parts.append(m.group(0))
+        else:
+            if int(m.group("cite_num")) in valid_citation_indices:
+                parts.append(m.group(0))
+        last_end = m.end()
+    tail = buffer[last_end:]
+
+    cut = _find_stream_cut(tail)
+    if len(tail) - cut > _STREAM_HOLDBACK_CAP:
+        # Pathological: a held-back fragment that's grown past any real pattern's
+        # possible length without resolving (e.g. a stray "!" that never became "!["
+        # within a reasonable window). Force-flush rather than swallowing content forever.
+        cut = len(tail)
+
+    return "".join(parts) + tail[:cut], tail[cut:]
 
 
 LOW_CONTEXT_CAVEAT = (
@@ -256,8 +384,9 @@ def deindex_document(filename: str):
 
 def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
     """
-    Returns dict: {"response": str, "sources": list[str], "context": str}
-    Sources are the document filenames that contributed context to the answer.
+    Returns dict: {"response": str, "sources": list[dict], "context": str, ...}
+    Each source is {"index", "filename", "page", "slide", "preview"} — one per retrieved
+    chunk, 1-indexed to match the "[n]" inline citations the response may contain.
     """
     global rag_system
     if not rag_system:
@@ -313,11 +442,17 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             except Exception as e:
                 logger.warning("Structure injection failed (non-fatal): %s", e)
 
-        # Collect unique source filenames and any images tied to the retrieved chunks
-        sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
+        # Structured, 1-indexed source citations (one per chunk) and any images tied to
+        # the retrieved chunks. Context chunks are numbered [1], [2], ... to match —
+        # the system prompt instructs the LLM to cite that number inline.
+        sources = _build_source_citations(docs)
+        valid_citation_indices = set(range(1, len(docs) + 1))
         relevant_image_ids = _relevant_image_ids(query, docs)
         images = _collect_images(docs, relevant_image_ids)
-        context = "\n\n".join(_format_chunk(d, relevant_image_ids) for d in docs) if docs else "No relevant context found."
+        context = (
+            "\n\n".join(_format_chunk(d, relevant_image_ids, index=i) for i, d in enumerate(docs, start=1))
+            if docs else "No relevant context found."
+        )
         low_context = len(docs) == 0
 
         # Exact-match response cache — only safe on a session's first turn, since a
@@ -332,6 +467,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             if cached is not None:
                 logger.info("Response cache hit for first-turn query")
                 cached, cache_images = _sanitize_and_filter_images(cached, images, relevant_image_ids)
+                cached = _sanitize_citations(cached, valid_citation_indices)
                 history.add_user_message(query)
                 history.add_ai_message(cached)
                 cached = _append_caveat_if_low_context(cached, low_context)
@@ -355,6 +491,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             set_cached_response(cache_key, response)
 
         response, images = _sanitize_and_filter_images(response, images, relevant_image_ids)
+        response = _sanitize_citations(response, valid_citation_indices)
         response = _append_caveat_if_low_context(response, low_context)
 
         return {"response": response, "sources": sources, "images": images, "context": context, "model_tier": model_tier}

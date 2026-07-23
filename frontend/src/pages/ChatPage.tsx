@@ -11,7 +11,7 @@ import { DocumentsPanel } from '@/components/documents-panel';
 import { ConversationsPanel } from '@/components/conversations-panel';
 import { HeaderMenu } from '@/components/header-menu';
 import {
-  API_BASE_URL, Message, sendTextMessage, sendTextMessageStream, sendAudioMessage,
+  API_BASE_URL, Message, SourceCitation, sendTextMessage, sendTextMessageStream, sendAudioMessage,
   sendImageMessage, generateTTS, OfflineError, toImageUrl,
 } from '@/services/api';
 import styles from './ChatPage.module.css';
@@ -220,7 +220,7 @@ export default function ChatPage() {
 
         await sendTextMessageStream(
           text,
-          (chunk: { type: string; value: string; sources?: string[]; images?: string[] }) => {
+          (chunk: { type: string; value: string; sources?: SourceCitation[]; images?: string[] }) => {
             if (chunk.type === 'sources') {
               setMessages((prev) =>
                 prev.map((msg) =>

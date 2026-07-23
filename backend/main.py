@@ -15,7 +15,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref, _format_chunk, _sanitize_and_filter_images, _relevant_image_ids, _collect_images
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref, _format_chunk, _sanitize_and_filter_images, _sanitize_citations, _sanitize_stream_buffer, _relevant_image_ids, _collect_images, _build_source_citations, _citation_filenames
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from document_store import upload_document, delete_document
@@ -283,10 +283,14 @@ async def text_chat(
             retriever = rag_system.get_retriever()
             docs = await asyncio.to_thread(retriever.invoke, message)
             docs = await asyncio.to_thread(rerank_documents, message, docs)
-            sources = list(set(d.metadata.get("source", "Unknown") for d in docs))
+            sources = _build_source_citations(docs)
+            valid_citation_indices = set(range(1, len(docs) + 1))
             relevant_image_ids = await asyncio.to_thread(_relevant_image_ids, message, docs)
             candidate_images = _collect_images(docs, relevant_image_ids)
-            context = "\n\n".join(_format_chunk(d, relevant_image_ids) for d in docs) if docs else "No relevant context found."
+            context = (
+                "\n\n".join(_format_chunk(d, relevant_image_ids, index=i) for i, d in enumerate(docs, start=1))
+                if docs else "No relevant context found."
+            )
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
 
@@ -298,6 +302,7 @@ async def text_chat(
             )
 
             full_response = ""
+            stream_buffer = ""
             try:
                 async for chunk in chain.astream(
                     {"context": context, "question": message},
@@ -305,17 +310,37 @@ async def text_chat(
                 ):
                     if not isinstance(chunk, str):
                         continue
-                    full_response += chunk
-                    yield f"data: {json.dumps({'type': 'content', 'value': chunk})}\n\n"
+                    # Validate citations/images incrementally as chunks arrive rather than
+                    # only on the final aggregate — a hallucinated "[n]" or invalid image
+                    # marker is held back (never shown to the client) until it's known to
+                    # be valid, instead of flashing on screen before a later cleanup pass.
+                    stream_buffer += chunk
+                    safe_text, stream_buffer = _sanitize_stream_buffer(
+                        stream_buffer, valid_citation_indices, relevant_image_ids
+                    )
+                    if safe_text:
+                        full_response += safe_text
+                        yield f"data: {json.dumps({'type': 'content', 'value': safe_text})}\n\n"
+                if stream_buffer:
+                    # Whatever's left never closed into a complete marker before the model
+                    # finished generating — nothing more is coming to complete it, so it's
+                    # just literal trailing text at this point.
+                    full_response += stream_buffer
+                    yield f"data: {json.dumps({'type': 'content', 'value': stream_buffer})}\n\n"
             except Exception as e:
                 logger.error("[stream_response] LLM streaming error: %s: %s", type(e).__name__, e)
                 yield f"data: {json.dumps({'type': 'content', 'value': 'Sorry, an error occurred.'})}\n\n"
 
+            # full_response was already sanitized incrementally above; these calls are now
+            # idempotent for the text itself but still needed to compute the final image list.
             _, images = _sanitize_and_filter_images(full_response, candidate_images, relevant_image_ids)
+            sanitized_response = _sanitize_citations(full_response, valid_citation_indices)
 
-            log_id, partition_key = log_rag_call(message, full_response, sources, 0, context, model_tier=model_tier)
+            log_id, partition_key = log_rag_call(
+                message, sanitized_response, _citation_filenames(sources), 0, context, model_tier=model_tier
+            )
             asyncio.get_running_loop().run_in_executor(
-                None, _eval_and_update, log_id, partition_key, message, context, full_response
+                None, _eval_and_update, log_id, partition_key, message, context, sanitized_response
             )
             yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
             yield f"data: {json.dumps({'type': 'images', 'value': images})}\n\n"
@@ -334,7 +359,7 @@ async def text_chat(
         latency_ms = int((time.time() - start) * 1000)
         context = result.pop("context", "")
         log_id, partition_key = log_rag_call(
-            message, result["response"], result.get("sources", []),
+            message, result["response"], _citation_filenames(result.get("sources", [])),
             latency_ms, context,
             model_tier=result.get("model_tier", "default"),
         )
@@ -451,7 +476,7 @@ async def audio_chat(
         query = result.get("query", "")
         log_id, partition_key = log_rag_call(
             query, result["response"],
-            result.get("sources", []), latency_ms, context
+            _citation_filenames(result.get("sources", [])), latency_ms, context
         )
         background_tasks.add_task(
             _eval_and_update, log_id, partition_key, query, context, result["response"]

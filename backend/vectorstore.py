@@ -222,6 +222,12 @@ Instructions:
    embed it AND describe it. Only do this when the image is genuinely relevant to what you're
    saying right there, don't embed the same image twice, and don't add this markdown for chunks
    with no such marker.
+4. Each context chunk below starts with a citation number like "[1]" right before its
+   [Source: ...] tag. When your answer uses information from a chunk, add that exact
+   number in square brackets immediately after the relevant sentence or clause, e.g.
+   "Panels should be cleaned every 3-6 months [1]." Cite every chunk you actually drew
+   from, don't cite a chunk you didn't use, and never invent a number that isn't shown
+   on one of the context chunks below.
 
 <context>
 {context}

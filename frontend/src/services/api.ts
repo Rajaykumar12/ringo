@@ -39,6 +39,16 @@ export class OfflineError extends Error {
   }
 }
 
+// One retrieved chunk backing the answer, 1-indexed to match any "[n]" inline citation
+// markers in the response text (see backend rag.py:_build_source_citations).
+export interface SourceCitation {
+  index: number;
+  filename: string;
+  page?: number | null;
+  slide?: number | null;
+  preview: string;
+}
+
 export interface Message {
   id: string;
   text: string;
@@ -47,7 +57,7 @@ export interface Message {
   isAudio?: boolean;
   audio_data?: string;
   audio_available?: boolean;
-  sources?: string[];
+  sources?: SourceCitation[];
   imageUri?: string;
   imageUris?: string[];
 }
@@ -55,7 +65,7 @@ export interface Message {
 export interface ChatResponse {
   success: boolean;
   response: string;
-  sources?: string[];
+  sources?: SourceCitation[];
   images?: string[];
   user_transcription?: string;
 }
@@ -87,7 +97,7 @@ export const sendTextMessage = async (
 
 export const sendTextMessageStream = async (
   message: string,
-  onChunk: (chunk: { type: string; value: string; sources?: string[]; images?: string[] }) => void,
+  onChunk: (chunk: { type: string; value: string; sources?: SourceCitation[]; images?: string[] }) => void,
   session_id: string = 'default',
   signal?: AbortSignal
 ): Promise<void> => {
@@ -165,7 +175,7 @@ export const sendAudioMessage = async (
 
 export interface ImageChatResponse {
   response: string;
-  sources?: string[];
+  sources?: SourceCitation[];
   images?: string[];
 }
 

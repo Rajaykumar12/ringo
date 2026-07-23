@@ -173,6 +173,79 @@
   padding: 0 2px;
 }
 
+.citationBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin: 0 1px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-teal);
+  color: #FFF;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  border: none;
+  cursor: pointer;
+  vertical-align: super;
+  transition: background-color 0.15s ease;
+}
+
+.citationBadge:hover {
+  background-color: var(--color-amber-dark);
+}
+
+.sourcesStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sourceChip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-surface-warm);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  max-width: 220px;
+}
+
+.sourceChipActive {
+  border-color: var(--color-teal);
+  color: var(--color-text);
+}
+
+.sourceChipIndex {
+  font-weight: 700;
+  color: var(--color-teal);
+  flex-shrink: 0;
+}
+
+.sourceChipLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sourcePreview {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-surface-warm);
+  border: 1px solid var(--color-border);
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
 .actionRowUser {
   justify-content: flex-end;
 }

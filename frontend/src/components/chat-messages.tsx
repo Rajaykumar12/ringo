@@ -1,7 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { IoSparkles, IoCopyOutline, IoCheckmark, IoPencilOutline, IoRefreshOutline, IoPlay, IoPause, IoMic, IoClose } from 'react-icons/io5';
-import { Message, toImageUrl } from '@/services/api';
+import { Message, SourceCitation, toImageUrl } from '@/services/api';
 import { useThemeColors } from '@/hooks/use-theme-colors';
 import { StreamingLiveRegion } from '@/components/streaming-live-region';
 import styles from './chat-messages.module.css';
@@ -20,6 +20,27 @@ const MarkdownImage = (
     />
   );
 };
+
+// The backend embeds bare "[n]" citation markers in response text (see rag.py's
+// _sanitize_citations, which already strips any marker not backed by a real source).
+// Rewrite the ones that match a known source into markdown link syntax so ReactMarkdown
+// renders them through the `a` component override below as clickable badges instead of
+// literal text.
+const CITATION_MARKER_RE = /\[(\d+)\]/g;
+
+function linkifyCitations(text: string, validIndices: Set<number>): string {
+  if (validIndices.size === 0) return text;
+  return text.replace(CITATION_MARKER_RE, (match, digits) => {
+    const idx = Number(digits);
+    return validIndices.has(idx) ? `[${idx}](citation:${idx})` : match;
+  });
+}
+
+function sourceLabel(source: SourceCitation): string {
+  if (source.page) return `${source.filename} · p.${source.page}`;
+  if (source.slide) return `${source.filename} · slide ${source.slide}`;
+  return source.filename;
+}
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -50,11 +71,21 @@ export function ChatMessages({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [lightboxSrc, setLightboxSrc] = React.useState<string | null>(null);
+  const [activeSource, setActiveSource] = React.useState<{ messageId: string; index: number } | null>(null);
 
   React.useEffect(() => {
     const el = containerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  const handleCitationClick = (messageId: string, index: number) => {
+    setActiveSource((prev) =>
+      prev?.messageId === messageId && prev.index === index ? null : { messageId, index }
+    );
+    document
+      .getElementById(`source-chip-${messageId}-${index}`)
+      ?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  };
 
   const handleAudioButtonPress = (message: Message) => {
     if (playingMessageId === message.id) {
@@ -138,9 +169,28 @@ export function ChatMessages({
                             img: ({ src, alt }) => (
                               <MarkdownImage src={src} alt={alt} onOpen={setLightboxSrc} />
                             ),
+                            a: ({ href, children }) => {
+                              if (href?.startsWith('citation:')) {
+                                const idx = Number(href.slice('citation:'.length));
+                                return (
+                                  <button
+                                    type="button"
+                                    className={styles.citationBadge}
+                                    onClick={() => handleCitationClick(message.id, idx)}
+                                    aria-label={`Jump to source ${idx}`}
+                                  >
+                                    {idx}
+                                  </button>
+                                );
+                              }
+                              return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+                            },
                           }}
                         >
-                          {message.text}
+                          {linkifyCitations(
+                            message.text,
+                            new Set((message.sources ?? []).map((s) => s.index))
+                          )}
                         </ReactMarkdown>
                       </div>
                       <StreamingLiveRegion text={message.text} active={isLastAI && isLoading} />
@@ -162,6 +212,34 @@ export function ChatMessages({
                     {formatTime(message.timestamp)}
                   </div>
                 </div>
+
+                {!isUser && message.sources && message.sources.length > 0 && (
+                  <div className={styles.sourcesStrip}>
+                    {message.sources.map((source) => (
+                      <button
+                        key={source.index}
+                        id={`source-chip-${message.id}-${source.index}`}
+                        type="button"
+                        className={[
+                          styles.sourceChip,
+                          activeSource?.messageId === message.id && activeSource.index === source.index
+                            ? styles.sourceChipActive
+                            : '',
+                        ].join(' ')}
+                        onClick={() => handleCitationClick(message.id, source.index)}
+                      >
+                        <span className={styles.sourceChipIndex}>[{source.index}]</span>
+                        <span className={styles.sourceChipLabel}>{sourceLabel(source)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!isUser && activeSource?.messageId === message.id && (
+                  <div className={styles.sourcePreview}>
+                    {message.sources?.find((s) => s.index === activeSource.index)?.preview}
+                  </div>
+                )}
 
                 {!!message.text && (
                   <div className={`${styles.actionRow} ${isUser ? styles.actionRowUser : ''}`}>
