@@ -1,6 +1,8 @@
+from unittest.mock import MagicMock, patch
+
 from langchain_core.documents import Document
 
-from rag import _is_structural_query, _format_chunk, pick_model
+from rag import _is_structural_query, _format_chunk, pick_model, rewrite_query
 
 
 def test_is_structural_query_detects_structural_keywords():
@@ -62,3 +64,31 @@ def test_pick_model_default_for_long_context_text():
 def test_pick_model_default_for_deep_conversation():
     docs = [Document(page_content="c", metadata={"source": "a.md"})]
     assert pick_model("short query", docs, "context", history_len=3) == "default"
+
+
+def test_rewrite_query_skips_structural_queries():
+    assert rewrite_query("what is in this book?") == []
+
+
+def test_rewrite_query_skips_short_queries():
+    assert rewrite_query("short") == []
+
+
+def test_rewrite_query_returns_variants_from_groq():
+    mock_response = MagicMock()
+    mock_response.choices[0].message.content = "First alternate phrasing\nSecond alternate phrasing"
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+    with patch("groq.Groq", return_value=mock_client):
+        variants = rewrite_query("what is the refund policy for damaged items")
+    assert variants == ["First alternate phrasing", "Second alternate phrasing"]
+
+
+def test_rewrite_query_falls_back_to_empty_list_on_error():
+    with patch("groq.Groq", side_effect=RuntimeError("network down")):
+        assert rewrite_query("what is the refund policy for damaged items") == []
+
+
+def test_rewrite_query_disabled_via_env(monkeypatch):
+    monkeypatch.setattr("rag.ENABLE_QUERY_REWRITE", False)
+    assert rewrite_query("what is the refund policy for damaged items") == []

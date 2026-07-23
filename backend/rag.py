@@ -57,6 +57,43 @@ def _is_structural_query(query: str) -> bool:
     return any(kw in q for kw in _STRUCTURAL_KW)
 
 
+ENABLE_QUERY_REWRITE = os.environ.get("ENABLE_QUERY_REWRITE", "true").lower() == "true"
+_QUERY_REWRITE_MODEL = "llama-3.1-8b-instant"
+_QUERY_REWRITE_MIN_LEN = 15  # below this there's not enough signal to usefully rephrase
+_QUERY_REWRITE_COUNT = 2
+
+
+def rewrite_query(query: str) -> List[str]:
+    """Generate alternate phrasings of the query to widen hybrid-retrieval recall on
+    vague or multi-part questions. Skipped for structural queries (already routed to
+    dedicated structure chunks) and short queries. Never raises — falls back to no
+    rewrites so retrieval still runs on the original query alone."""
+    if not ENABLE_QUERY_REWRITE:
+        return []
+    if _is_structural_query(query) or len(query) < _QUERY_REWRITE_MIN_LEN:
+        return []
+    try:
+        from groq import Groq
+        client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        prompt = (
+            f"Rewrite this question into {_QUERY_REWRITE_COUNT} alternate phrasings that "
+            "would help a search engine retrieve the same information. One phrasing per "
+            "line, no numbering, no extra commentary.\n\nQuestion: " + query
+        )
+        resp = client.chat.completions.create(
+            model=_QUERY_REWRITE_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=120,
+            temperature=0.3,
+        )
+        lines = [ln.strip("-•* \t") for ln in resp.choices[0].message.content.strip().splitlines()]
+        variants = [ln for ln in lines if ln and ln.lower() != query.strip().lower()]
+        return variants[:_QUERY_REWRITE_COUNT]
+    except Exception as e:
+        logger.warning("Query rewrite failed (%s) — retrieving on original query only", e)
+        return []
+
+
 # Conservative thresholds — false negatives (using the big model when the small one
 # would've sufficed) are cheap; false positives (routing a genuinely complex question
 # to the 8B model) degrade answer quality, so bias toward "default".
@@ -222,9 +259,13 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
         rag_system._build_rag_chain()
 
     try:
-        # Retrieve relevant docs
+        # Retrieve relevant docs — original query plus any rewritten variants, merged.
+        # Reranking below still scores against the original query, so this only widens
+        # recall; it doesn't change what "relevant" means.
         retriever = rag_system.get_retriever()
-        docs = retriever.invoke(query)
+        docs: List[Document] = []
+        for variant in [query] + rewrite_query(query):
+            docs.extend(retriever.invoke(variant))
 
         # Deduplicate by content hash
         seen: set = set()
