@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   IoFolderOpen, IoClose, IoCloudUploadOutline, IoAlertCircleOutline,
   IoFolderOpenOutline, IoTrashOutline, IoDocumentText, IoEasel, IoCodeSlash,
+  IoGrid, IoGlobeOutline,
 } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { listDocuments, uploadDocument, deleteDocument, DocumentInfo } from '@/services/api';
@@ -13,12 +14,15 @@ interface DocumentsPanelProps {
   onClose: () => void;
 }
 
-const SUPPORTED_EXTENSIONS = '.pdf,.pptx,.md,.markdown,.txt';
+const SUPPORTED_EXTENSIONS = '.pdf,.pptx,.md,.markdown,.txt,.docx,.html,.csv,.xlsx';
 
 const createTypeIcon = (Colors: ReturnType<typeof useThemeColors>): Record<string, { Icon: IconType; color: string; bg: string }> => ({
   pdf: { Icon: IoDocumentText, color: Colors.amber, bg: Colors.amberLight },
   pptx: { Icon: IoEasel, color: Colors.teal, bg: Colors.tealLight },
   markdown: { Icon: IoCodeSlash, color: Colors.textMuted, bg: Colors.surfaceWarm },
+  docx: { Icon: IoDocumentText, color: Colors.amber, bg: Colors.amberLight },
+  html: { Icon: IoGlobeOutline, color: Colors.teal, bg: Colors.tealLight },
+  tabular: { Icon: IoGrid, color: Colors.textMuted, bg: Colors.surfaceWarm },
 });
 
 const MAX_DOCUMENT_SIZE_MB = 20;
@@ -120,7 +124,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
           </button>
         </div>
 
-        <p className={styles.subtitle}>Upload PDFs, PowerPoints, or Markdown to expand the knowledge base.</p>
+        <p className={styles.subtitle}>Upload documents, presentations, or spreadsheets to expand the knowledge base.</p>
 
         <input
           ref={fileInputRef}
@@ -151,7 +155,7 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
           )}
         </button>
 
-        <p className={styles.hint}>PDF · PPTX · Markdown — max 20 MB</p>
+        <p className={styles.hint}>PDF · PPTX · Markdown · DOCX · HTML · CSV · XLSX — max 20 MB</p>
 
         <div className={styles.divider} />
 

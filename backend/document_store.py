@@ -8,7 +8,7 @@ import os
 
 logger = logging.getLogger("ringo.document_store")
 
-ALLOWED_EXTENSIONS = {".pdf", ".pptx", ".md"}
+ALLOWED_EXTENSIONS = {".pdf", ".pptx", ".md", ".docx", ".html", ".csv", ".xlsx"}
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 20 * 1024 * 1024))  # 20 MB default
 
 

@@ -526,7 +526,7 @@ async def refresh_docs(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".pptx", ".md"}
+SUPPORTED_UPLOAD_EXTENSIONS = {".pdf", ".pptx", ".md", ".docx", ".html", ".csv", ".xlsx"}
 MAX_DOCUMENT_SIZE_MB = int(os.environ.get("MAX_DOCUMENT_SIZE_MB", 20))
 
 

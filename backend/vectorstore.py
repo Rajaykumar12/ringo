@@ -120,7 +120,7 @@ def _pack_paragraphs(paragraphs: List[str], chunk_size: int, chunk_overlap: int)
 
 
 class LangChainRAG:
-    SUPPORTED_EXTENSIONS = {".pdf", ".pptx", ".md"}
+    SUPPORTED_EXTENSIONS = {".pdf", ".pptx", ".md", ".docx", ".html", ".csv", ".xlsx"}
 
     def __init__(self, documents_folder: str = "documents"):
         self.documents_folder = documents_folder
@@ -361,6 +361,154 @@ Instructions:
             logger.error(f"Error loading {filename}: {e}")
         return []
 
+    def _load_docx(self, filepath: str, filename: str) -> List[Document]:
+        """Load a DOCX file as a single document with math normalization."""
+        try:
+            from docx import Document as DocxDocument
+        except ImportError:
+            logger.warning("python-docx not installed — skipping DOCX loading")
+            return []
+        try:
+            docx_doc = DocxDocument(filepath)
+            text = "\n\n".join(p.text for p in docx_doc.paragraphs if p.text.strip())
+            if text.strip():
+                logger.info(f"Loaded: {filename} ({len(text)} chars)")
+                return [Document(
+                    page_content=normalize_math(text.strip()),
+                    metadata={"source": filename, "type": "docx"},
+                )]
+            logger.info(f"Skipping {filename}: empty file")
+        except Exception as e:
+            logger.error(f"Error loading DOCX {filename}: {e}")
+        return []
+
+    def _load_html(self, filepath: str, filename: str) -> List[Document]:
+        """Load an HTML file as a single document, stripped down to visible text."""
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.warning("beautifulsoup4 not installed — skipping HTML loading")
+            return []
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                soup = BeautifulSoup(f.read(), "html.parser")
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+            lines = [ln.strip() for ln in soup.get_text(separator="\n").splitlines() if ln.strip()]
+            text = "\n".join(lines)
+            if text.strip():
+                logger.info(f"Loaded: {filename} ({len(text)} chars)")
+                return [Document(
+                    page_content=normalize_math(text.strip()),
+                    metadata={"source": filename, "type": "html"},
+                )]
+            logger.info(f"Skipping {filename}: empty file")
+        except Exception as e:
+            logger.error(f"Error loading HTML {filename}: {e}")
+        return []
+
+    _TABULAR_ROWS_PER_CHUNK = 20
+
+    def _load_tabular(self, filepath: str, filename: str, ext: str) -> List[Document]:
+        """Load CSV/XLSX by flattening rows into text chunks, with the header row
+        repeated in every chunk so BM25/semantic search can still match on column names.
+        Deliberately not indexed as structured data — a dedicated tabular-query tool is
+        the natural follow-up once agentic tool-use exists (see CAPABILITY_EXPANSION.md
+        Step 9); this is the pragmatic version that reuses the existing chunk+embed path."""
+        try:
+            rows: List[list]
+            if ext == ".csv":
+                import csv as csv_module
+                with open(filepath, "r", encoding="utf-8", errors="ignore", newline="") as f:
+                    rows = list(csv_module.reader(f))
+            else:
+                from openpyxl import load_workbook
+                wb = load_workbook(filepath, read_only=True, data_only=True)
+                sheet = wb.active
+                rows = [
+                    ["" if c is None else str(c) for c in row]
+                    for row in sheet.iter_rows(values_only=True)
+                ]
+        except ImportError as e:
+            logger.warning(f"Missing dependency for tabular loading of {filename}: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"Error loading tabular file {filename}: {e}")
+            return []
+
+        rows = [r for r in rows if any(str(c).strip() for c in r)]
+        if len(rows) < 2:
+            logger.info(f"Skipping {filename}: no data rows")
+            return []
+
+        header, data_rows = rows[0], rows[1:]
+        header_line = " | ".join(str(h) for h in header)
+        documents = []
+        for start in range(0, len(data_rows), self._TABULAR_ROWS_PER_CHUNK):
+            batch = data_rows[start:start + self._TABULAR_ROWS_PER_CHUNK]
+            row_lines = [" | ".join(str(c) for c in row) for row in batch]
+            documents.append(Document(
+                page_content="\n".join([header_line] + row_lines),
+                metadata={"source": filename, "type": "tabular"},
+            ))
+        logger.info(f"Loaded: {filename} ({len(data_rows)} rows, {len(documents)} chunks)")
+        return documents
+
+    def _extract_docx_structure(self, filepath: str, filename: str) -> Optional[Document]:
+        """Extract Heading-styled paragraphs from a DOCX as a single structure chunk."""
+        try:
+            from docx import Document as DocxDocument
+        except ImportError:
+            return None
+        try:
+            docx_doc = DocxDocument(filepath)
+            headings = []
+            for p in docx_doc.paragraphs:
+                style_name = (p.style.name if p.style else "") or ""
+                if style_name.startswith("Heading") and p.text.strip():
+                    parts = style_name.split()
+                    level = int(parts[-1]) if parts[-1].isdigit() else 1
+                    headings.append((level, p.text.strip()))
+            if len(headings) < 2:
+                return None
+            lines = [f"Document Structure: {filename}", "Headings:"]
+            for level, text in headings:
+                lines.append(f"{'  ' * (level - 1)}- {text}")
+            return Document(
+                page_content="\n".join(lines),
+                metadata={"source": filename, "type": "docx", "chunk_type": "structure"},
+            )
+        except Exception as e:
+            logger.warning(f"Structure extraction failed for {filename}: {e}")
+            return None
+
+    def _extract_html_structure(self, filepath: str, filename: str) -> Optional[Document]:
+        """Extract h1-h6 heading tags from an HTML file as a single structure chunk."""
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            return None
+        try:
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                soup = BeautifulSoup(f.read(), "html.parser")
+            headings = []
+            for tag in soup.find_all(re.compile(r"^h[1-6]$")):
+                text = tag.get_text(strip=True)
+                if text:
+                    headings.append((int(tag.name[1]), text))
+            if len(headings) < 2:
+                return None
+            lines = [f"Document Structure: {filename}", "Headings:"]
+            for level, text in headings:
+                lines.append(f"{'  ' * (level - 1)}- {text}")
+            return Document(
+                page_content="\n".join(lines),
+                metadata={"source": filename, "type": "html", "chunk_type": "structure"},
+            )
+        except Exception as e:
+            logger.warning(f"Structure extraction failed for {filename}: {e}")
+            return None
+
     def _extract_pdf_structure(self, filepath: str, filename: str) -> Optional[Document]:
         """Extract TOC or heading structure from a PDF as a single structure chunk."""
         try:
@@ -492,6 +640,15 @@ Instructions:
             elif ext == ".md":
                 documents.extend(self._load_markdown(filepath, filename))
                 struct = self._extract_markdown_structure(filepath, filename)
+            elif ext == ".docx":
+                documents.extend(self._load_docx(filepath, filename))
+                struct = self._extract_docx_structure(filepath, filename)
+            elif ext == ".html":
+                documents.extend(self._load_html(filepath, filename))
+                struct = self._extract_html_structure(filepath, filename)
+            elif ext in (".csv", ".xlsx"):
+                documents.extend(self._load_tabular(filepath, filename, ext))
+                struct = None
             else:
                 struct = None
 
@@ -501,9 +658,22 @@ Instructions:
 
         return structure_docs + documents
 
+    @staticmethod
+    def _chunk_prose_document(doc: Document, chunk_size: int = 800, chunk_overlap: int = 150) -> List[Document]:
+        """Split a long prose document (PDF page, DOCX, HTML) on paragraph/heading
+        boundaries; returns the document unchanged if it's already under the size
+        threshold (matches the original fixed-size splitter's 900-char cutoff)."""
+        if len(doc.page_content) <= chunk_size + 100:
+            return [doc]
+        paragraphs = _split_into_paragraphs(doc.page_content)
+        return [
+            Document(page_content=chunk_text, metadata=dict(doc.metadata))
+            for chunk_text in _pack_paragraphs(paragraphs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        ]
+
     def _chunk_documents(self, documents: List[Document]) -> List[Document]:
-        """Per-type chunking — PPTX and per-page PDFs are already small,
-        so only split markdown and very long PDF pages further."""
+        """Per-type chunking — PPTX/tabular chunks are already small, so only split
+        markdown and long prose documents (PDF pages, DOCX, HTML) further."""
         md_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
 
         all_chunks: List[Document] = []
@@ -512,16 +682,10 @@ Instructions:
                 all_chunks.append(doc)  # Never split structure chunks
                 continue
             doc_type = doc.metadata.get("type", "")
-            if doc_type == "pptx":
-                all_chunks.append(doc)  # Already 1 doc per slide
-            elif doc_type == "pdf":
-                # Split long pages on paragraph/heading boundaries; short pages kept as-is
-                if len(doc.page_content) > 900:
-                    paragraphs = _split_into_paragraphs(doc.page_content)
-                    for chunk_text in _pack_paragraphs(paragraphs, chunk_size=800, chunk_overlap=150):
-                        all_chunks.append(Document(page_content=chunk_text, metadata=dict(doc.metadata)))
-                else:
-                    all_chunks.append(doc)
+            if doc_type in ("pptx", "tabular"):
+                all_chunks.append(doc)  # Already sized appropriately (1/slide, row-windowed)
+            elif doc_type in ("pdf", "docx", "html"):
+                all_chunks.extend(self._chunk_prose_document(doc))
             elif doc_type == "markdown":
                 all_chunks.extend(md_splitter.split_documents([doc]))
             else:
@@ -594,9 +758,18 @@ Instructions:
         elif ext == ".pptx":
             docs = self._load_pptx(filepath, filename)
             struct = self._extract_pptx_structure(filepath, filename)
-        else:
+        elif ext == ".md":
             docs = self._load_markdown(filepath, filename)
             struct = self._extract_markdown_structure(filepath, filename)
+        elif ext == ".docx":
+            docs = self._load_docx(filepath, filename)
+            struct = self._extract_docx_structure(filepath, filename)
+        elif ext == ".html":
+            docs = self._load_html(filepath, filename)
+            struct = self._extract_html_structure(filepath, filename)
+        else:  # .csv, .xlsx
+            docs = self._load_tabular(filepath, filename, ext)
+            struct = None
         if struct:
             docs = [struct] + docs
 
