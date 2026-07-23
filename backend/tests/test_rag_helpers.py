@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from langchain_core.documents import Document
 
-from rag import _is_structural_query, _format_chunk, pick_model, rewrite_query
+from rag import _is_structural_query, _format_chunk, pick_model, rewrite_query, _append_caveat_if_low_context
 
 
 def test_is_structural_query_detects_structural_keywords():
@@ -92,3 +92,19 @@ def test_rewrite_query_falls_back_to_empty_list_on_error():
 def test_rewrite_query_disabled_via_env(monkeypatch):
     monkeypatch.setattr("rag.ENABLE_QUERY_REWRITE", False)
     assert rewrite_query("what is the refund policy for damaged items") == []
+
+
+def test_append_caveat_appends_when_low_context():
+    result = _append_caveat_if_low_context("The sky is blue.", low_context=True)
+    assert result.startswith("The sky is blue.")
+    assert "may not be well-grounded" in result
+
+
+def test_append_caveat_no_change_when_context_found():
+    assert _append_caveat_if_low_context("The sky is blue.", low_context=False) == "The sky is blue."
+
+
+def test_append_caveat_not_duplicated_if_already_present():
+    once = _append_caveat_if_low_context("The sky is blue.", low_context=True)
+    twice = _append_caveat_if_low_context(once, low_context=True)
+    assert once == twice

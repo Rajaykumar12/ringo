@@ -203,6 +203,22 @@ def _sanitize_and_filter_images(response: str, images: List[str], valid_ids: set
     return clean_response, filtered_images
 
 
+LOW_CONTEXT_CAVEAT = (
+    "\n\n_Note: no closely matching content was found in your documents for this "
+    "question — this answer may not be well-grounded in your uploaded material._"
+)
+
+
+def _append_caveat_if_low_context(response: str, low_context: bool) -> str:
+    """Cheap, non-LLM groundedness signal: flag responses generated with zero retrieved
+    chunks. This is a heuristic floor, not the full LLM-judge faithfulness score (that
+    still runs async via eval.py/_eval_and_update and is surfaced in the admin dashboard) —
+    kept synchronous and free of extra LLM calls so it never adds response latency."""
+    if low_context and LOW_CONTEXT_CAVEAT.strip() not in response:
+        return response + LOW_CONTEXT_CAVEAT
+    return response
+
+
 def initialize_rag():
     global rag_system
     rag_system = LangChainRAG()
@@ -302,6 +318,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
         relevant_image_ids = _relevant_image_ids(query, docs)
         images = _collect_images(docs, relevant_image_ids)
         context = "\n\n".join(_format_chunk(d, relevant_image_ids) for d in docs) if docs else "No relevant context found."
+        low_context = len(docs) == 0
 
         # Exact-match response cache — only safe on a session's first turn, since a
         # cached answer doesn't reflect any prior conversation context.
@@ -317,6 +334,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
                 cached, cache_images = _sanitize_and_filter_images(cached, images, relevant_image_ids)
                 history.add_user_message(query)
                 history.add_ai_message(cached)
+                cached = _append_caveat_if_low_context(cached, low_context)
                 return {"response": cached, "sources": sources, "images": cache_images, "context": context, "model_tier": "cache"}
 
         # Route to the fast/cheap model tier for short, simple, early-conversation queries
@@ -337,6 +355,7 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
             set_cached_response(cache_key, response)
 
         response, images = _sanitize_and_filter_images(response, images, relevant_image_ids)
+        response = _append_caveat_if_low_context(response, low_context)
 
         return {"response": response, "sources": sources, "images": images, "context": context, "model_tier": model_tier}
 
