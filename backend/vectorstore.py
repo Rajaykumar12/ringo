@@ -6,6 +6,7 @@ OCR on embedded images, LaTeX normalization, and BM25 + semantic hybrid retrieva
 import io
 import logging
 import os
+import re
 from typing import List, Optional
 
 from langchain_groq import ChatGroq
@@ -68,6 +69,54 @@ def _save_extracted_image(img_bytes: bytes, mime_hint: Optional[str] = None) -> 
     except Exception as e:
         logger.warning("Failed to save extracted image: %s", e)
         return None
+
+
+def _split_into_paragraphs(text: str) -> List[str]:
+    """Split page text into paragraph-like units on blank lines, preserving order."""
+    parts = re.split(r"\n\s*\n", text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _looks_like_heading(paragraph: str) -> bool:
+    """Heuristic: short, single-line, no terminal sentence punctuation — likely a
+    heading/title rather than prose, so it should start a new chunk instead of being
+    folded onto the end of the previous one (which would blur a topic boundary)."""
+    if "\n" in paragraph or len(paragraph) > 80:
+        return False
+    return not paragraph.rstrip().endswith((".", "?", "!", ":", ";", ","))
+
+
+def _pack_paragraphs(paragraphs: List[str], chunk_size: int, chunk_overlap: int) -> List[str]:
+    """Greedily pack paragraphs into chunks up to chunk_size without splitting a
+    paragraph across a chunk boundary. A paragraph that looks like a heading always
+    starts a new chunk (unless it's the very first paragraph), so a topic shift doesn't
+    get merged into the tail of the previous chunk. Falls back to
+    RecursiveCharacterTextSplitter only for the rare paragraph that itself exceeds
+    chunk_size on its own."""
+    fallback_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks: List[str] = []
+    current: List[str] = []
+    current_len = 0
+
+    def flush():
+        if current:
+            chunks.append("\n\n".join(current))
+            current.clear()
+
+    for para in paragraphs:
+        if len(para) > chunk_size:
+            flush()
+            current_len = 0
+            chunks.extend(fallback_splitter.split_text(para))
+            continue
+        if current and (_looks_like_heading(para) or current_len + len(para) + 2 > chunk_size):
+            flush()
+            current_len = 0
+        current.append(para)
+        current_len += len(para) + 2
+
+    flush()
+    return chunks
 
 
 class LangChainRAG:
@@ -455,7 +504,6 @@ Instructions:
     def _chunk_documents(self, documents: List[Document]) -> List[Document]:
         """Per-type chunking — PPTX and per-page PDFs are already small,
         so only split markdown and very long PDF pages further."""
-        pdf_splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=150)
         md_splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=100)
 
         all_chunks: List[Document] = []
@@ -467,9 +515,11 @@ Instructions:
             if doc_type == "pptx":
                 all_chunks.append(doc)  # Already 1 doc per slide
             elif doc_type == "pdf":
-                # Split long pages; short pages kept as-is
+                # Split long pages on paragraph/heading boundaries; short pages kept as-is
                 if len(doc.page_content) > 900:
-                    all_chunks.extend(pdf_splitter.split_documents([doc]))
+                    paragraphs = _split_into_paragraphs(doc.page_content)
+                    for chunk_text in _pack_paragraphs(paragraphs, chunk_size=800, chunk_overlap=150):
+                        all_chunks.append(Document(page_content=chunk_text, metadata=dict(doc.metadata)))
                 else:
                     all_chunks.append(doc)
             elif doc_type == "markdown":
