@@ -655,6 +655,21 @@ async def get_document_chunks(source: str, query: str = ""):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@app.get("/conversations/{session_id}")
+async def get_conversation(session_id: str):
+    """Recover a session's durable message history — the write-through SQLite
+    copy behind memory.py's Redis/in-memory cache — so a page reload after a
+    Redis TTL expiry or a backend restart doesn't lose prior turns."""
+    _validate_session_id(session_id)
+    from conversation_store import get_messages
+    try:
+        messages = get_messages(session_id)
+    except Exception as e:
+        logger.error("Error fetching conversation %s: %s", session_id, e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+    return {"session_id": session_id, "messages": messages}
+
+
 @app.get("/admin/stats")
 async def admin_stats(days: int = 7, _: None = Depends(_require_admin_key)):
     if days < 1 or days > 90:
