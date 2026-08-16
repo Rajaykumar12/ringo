@@ -24,8 +24,11 @@ interface ConversationsContextValue {
 const STORAGE_KEY = 'ringo:conversations';
 const MAX_TITLE_LENGTH = 42;
 
-const makeId = () => `conv_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-const makeSessionId = () => `session_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+// crypto.randomUUID(), not Date.now()+Math.random(): sessionId doubles as a
+// bearer capability token for GET /conversations/{session_id}, so it needs to
+// be unguessable, not just unique.
+const makeId = () => `conv_${crypto.randomUUID()}`;
+const makeSessionId = () => `session_${crypto.randomUUID()}`;
 
 function freshConversation(): Conversation {
   return { id: makeId(), sessionId: makeSessionId(), title: 'New chat', messages: [], updatedAt: Date.now() };
