@@ -2,31 +2,25 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IoClose, IoCheckmark, IoThumbsUpOutline, IoThumbsDownOutline } from 'react-icons/io5';
 import { useThemeColors } from '@/hooks/use-theme-colors';
+import { useAdminKey } from '@/hooks/use-admin-key';
 import { getAdminStats, getAdminLogs, AdminStats, AdminLogEntry } from '@/services/api';
 import styles from './AdminPage.module.css';
-
-const ADMIN_KEY_STORAGE = 'ringo:admin_key';
 
 export default function AdminPage() {
   const navigate = useNavigate();
   const Colors = useThemeColors();
 
-  const [adminKey, setAdminKey] = useState('');
+  const { adminKey, setAdminKey, loaded } = useAdminKey();
   const [keyInput, setKeyInput] = useState('');
-  const [loaded, setLoaded] = useState(false);
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [logs, setLogs] = useState<AdminLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(ADMIN_KEY_STORAGE);
-    if (stored) {
-      setAdminKey(stored);
-      setKeyInput(stored);
-    }
-    setLoaded(true);
-  }, []);
+    if (loaded) setKeyInput(adminKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   const fetchData = useCallback(async (key: string) => {
     if (!key) return;
@@ -54,9 +48,7 @@ export default function AdminPage() {
   }, [loaded, adminKey, fetchData]);
 
   const handleSaveKey = () => {
-    const trimmed = keyInput.trim();
-    setAdminKey(trimmed);
-    window.localStorage.setItem(ADMIN_KEY_STORAGE, trimmed);
+    setAdminKey(keyInput);
   };
 
   return (
