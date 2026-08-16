@@ -183,6 +183,13 @@ export function ChatMessages({
                                   </button>
                                 );
                               }
+                              // Defense-in-depth: only render as a live link if it's
+                              // http(s). react-markdown's default (non-raw-HTML) mode
+                              // already blocks script injection, but an LLM-emitted
+                              // `javascript:`-scheme link would otherwise still render.
+                              if (!href || !/^https?:\/\//i.test(href)) {
+                                return <>{children}</>;
+                              }
                               return <a href={href} target="_blank" rel="noreferrer">{children}</a>;
                             },
                           }}
