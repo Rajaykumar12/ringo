@@ -752,6 +752,9 @@ Instructions:
 
     def add_document(self, filename: str):
         """Incrementally index a single new/updated document without touching the rest of the corpus."""
+        # Defense-in-depth: never trust a caller-supplied path fragment, even
+        # though callers are expected to basename first.
+        filename = os.path.basename(filename)
         filepath = os.path.join(self.documents_folder, filename)
         ext = os.path.splitext(filename)[1].lower()
         if ext not in self.SUPPORTED_EXTENSIONS or not os.path.exists(filepath):
