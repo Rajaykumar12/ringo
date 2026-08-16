@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   IoFolderOpen, IoClose, IoCloudUploadOutline, IoAlertCircleOutline,
   IoFolderOpenOutline, IoTrashOutline, IoDocumentText, IoEasel, IoCodeSlash,
-  IoGrid, IoGlobeOutline,
+  IoGrid, IoGlobeOutline, IoCheckmark,
 } from 'react-icons/io5';
 import type { IconType } from 'react-icons';
 import { listDocuments, uploadDocument, deleteDocument, DocumentInfo } from '@/services/api';
 import { useThemeColors } from '@/hooks/use-theme-colors';
+import { useAdminKey } from '@/hooks/use-admin-key';
 import styles from './documents-panel.module.css';
 
 interface DocumentsPanelProps {
@@ -47,6 +48,14 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Upload/delete are gated server-side behind x-admin-key (they can mutate
+  // the shared RAG corpus). Shares storage with the Admin dashboard's key —
+  // entering it in either place unlocks both for the rest of the tab session.
+  const { adminKey, setAdminKey, loaded: adminKeyLoaded } = useAdminKey();
+  const [keyInput, setKeyInput] = useState('');
+  useEffect(() => { if (adminKeyLoaded) setKeyInput(adminKey); }, [adminKeyLoaded, adminKey]);
+  const handleSaveKey = () => setAdminKey(keyInput);
+
   const fetchDocuments = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -74,11 +83,15 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
       window.alert(`"${file.name}" exceeds the ${MAX_DOCUMENT_SIZE_MB}MB limit.`);
       return;
     }
+    if (!adminKey) {
+      window.alert('Enter the admin key above to upload documents.');
+      return;
+    }
     setUploading(true);
     setUploadProgress(0);
     try {
       const uri = URL.createObjectURL(file);
-      await uploadDocument(uri, file.name, file.type || 'application/octet-stream', setUploadProgress);
+      await uploadDocument(uri, file.name, file.type || 'application/octet-stream', adminKey, setUploadProgress);
       URL.revokeObjectURL(uri);
       await fetchDocuments();
     } catch (err: any) {
@@ -90,9 +103,13 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
   };
 
   const handleDelete = async (filename: string) => {
+    if (!adminKey) {
+      window.alert('Enter the admin key above to delete documents.');
+      return;
+    }
     if (!window.confirm(`Remove "${filename}" from the index?`)) return;
     try {
-      await deleteDocument(filename);
+      await deleteDocument(filename, adminKey);
       await fetchDocuments();
     } catch (e: any) {
       window.alert(getErrorMessage(e, 'Delete failed. Please try again.'));
@@ -125,6 +142,20 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
         </div>
 
         <p className={styles.subtitle}>Upload documents, presentations, or spreadsheets to expand the knowledge base.</p>
+
+        <div className={styles.keyRow}>
+          <input
+            className={styles.keyInput}
+            placeholder="Admin key (required to upload/delete)"
+            value={keyInput}
+            onChange={(e) => setKeyInput(e.target.value)}
+            type="password"
+            autoCapitalize="none"
+          />
+          <button type="button" onClick={handleSaveKey} className={styles.saveBtn} aria-label="Save admin key">
+            <IoCheckmark size={18} color="#FFF" />
+          </button>
+        </div>
 
         <input
           ref={fileInputRef}

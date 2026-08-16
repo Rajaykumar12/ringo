@@ -72,6 +72,38 @@
   margin: 0;
 }
 
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 16px 0;
+}
+
+.keyInput {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-text);
+  padding: 8px 10px;
+  background-color: var(--color-surface-warm);
+  border-radius: var(--radius-sm);
+  border: none;
+  outline: none;
+  font-family: inherit;
+}
+
+.saveBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .uploadBtn {
   margin: 16px 16px 8px;
   background-color: var(--color-amber);

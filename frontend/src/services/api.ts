@@ -222,6 +222,7 @@ export const uploadDocument = async (
   uri: string,
   filename: string,
   mimeType: string,
+  adminKey: string,
   onProgress?: (pct: number) => void
 ): Promise<{ success: boolean; filename: string; message: string }> => {
   const formData = new FormData();
@@ -237,7 +238,7 @@ export const uploadDocument = async (
 
   void mimeType;
   const response = await api.post('/documents/upload', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': 'multipart/form-data', 'x-admin-key': adminKey },
     onUploadProgress: (e) => {
       if (onProgress && e.total) onProgress(Math.round((e.loaded * 100) / e.total));
     },
@@ -245,8 +246,10 @@ export const uploadDocument = async (
   return response.data;
 };
 
-export const deleteDocument = async (filename: string): Promise<void> => {
-  await api.delete(`/documents/${encodeURIComponent(filename)}`);
+export const deleteDocument = async (filename: string, adminKey: string): Promise<void> => {
+  await api.delete(`/documents/${encodeURIComponent(filename)}`, {
+    headers: { 'x-admin-key': adminKey },
+  });
 };
 
 export interface DocumentChunk {
