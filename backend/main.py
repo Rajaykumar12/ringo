@@ -60,6 +60,20 @@ def _validate_session_id(session_id: str) -> None:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
 
 
+def _reject_oversized_upload(request: Request, max_mb: int) -> None:
+    """Best-effort early rejection using the client-supplied Content-Length header,
+    before the body is read into memory. Not a substitute for the post-read size
+    check below (Content-Length can be absent/wrong for chunked transfers) — just
+    avoids buffering an obviously-oversized body first."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > max_mb * 1024 * 1024:
+                raise HTTPException(status_code=413, detail=f"File too large (max {max_mb}MB)")
+        except ValueError:
+            pass
+
+
 # Allows up to 2 words between the determiner and the noun so phrasing like
 # "the SOSC logo" still matches, not just "the image". Deliberately excludes
 # generic document-content nouns like "diagram"/"figure" — those are exactly
@@ -393,6 +407,7 @@ async def image_chat(
         raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_MESSAGE_LENGTH} characters)")
     if image.content_type and not image.content_type.startswith("image/"):
         raise HTTPException(status_code=415, detail="File must be an image")
+    _reject_oversized_upload(request, MAX_IMAGE_SIZE_MB)
 
     image_bytes = await image.read()
     if not image_bytes:
@@ -455,6 +470,7 @@ async def audio_chat(
     # Validate before reading body so client gets a proper 4xx, not 500
     if file.content_type and not file.content_type.startswith("audio/"):
         raise HTTPException(status_code=415, detail="File must be an audio file")
+    _reject_oversized_upload(request, MAX_AUDIO_SIZE_MB)
 
     audio_bytes = await file.read()
 
