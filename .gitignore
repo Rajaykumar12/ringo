@@ -70,3 +70,9 @@ backend/data
 CAPABILITY_EXPANSION.md
 ROADMAP.md
 AUDIT_REPORT.md
+# Added by code-review-graph
+.code-review-graph/
+
+# Claude Code local tool config (machine-specific paths, local settings)
+.claude/
+.mcp.json
