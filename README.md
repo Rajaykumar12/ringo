@@ -43,8 +43,8 @@ Fully self-hostable: no cloud vendor lock-in — documents, images, and analytic
 - **Model Tiering** — Short, simple, or early-conversation queries are automatically routed to a faster Groq model; longer or structural queries use the full model
 - **Response Caching** — Exact-match Redis cache for first-turn queries, avoiding redundant LLM calls
 - **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
-- **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production)
-- **Conversation Memory** — Redis-backed session history with in-memory fallback
+- **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production). Upload/delete/refresh require the `x-admin-key` header (`ADMIN_API_KEY`) — the Documents panel in the UI prompts for it
+- **Conversation Memory** — Redis-backed session history with in-memory fallback, write-through persisted to SQLite (`conversation_store.py`) so a page reload after a Redis TTL expiry or backend restart doesn't lose prior turns; recoverable via `GET /conversations/{session_id}`
 - **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
 - **Rate Limiting** — Per-endpoint limits via `slowapi` (see [API Endpoints](#api-endpoints))
 - **Analytics** — Query, response, sources, latency, and model tier logged to a local SQLite store, readable from the admin dashboard
@@ -99,7 +99,7 @@ Image chat bypasses the RAG pipeline entirely:
 
 ```bash
 # Full stack with Docker (recommended)
-cp backend/.env.example backend/.env   # add your GROQ_API_KEY
+cp backend/.env.example backend/.env   # add your GROQ_API_KEY (and ADMIN_API_KEY, see below)
 docker compose up --build
 # Backend: http://localhost:8000
 # Frontend: http://localhost:8081
@@ -115,6 +115,8 @@ cd frontend
 npm install
 npm run dev
 ```
+
+Set `ADMIN_API_KEY` if you want to use the Documents panel (upload/delete/refresh) or the Admin dashboard — both are gated behind it. Without it, those routes return `503` and the corresponding UI prompts for a key that will never validate.
 
 ### System dependencies (for OCR)
 
@@ -139,18 +141,21 @@ OCR is optional — the system falls back gracefully if Tesseract is not install
 | `REDIS_URL` | No | `redis://localhost:6379` | Session memory and response cache (falls back to in-memory) |
 | `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins — set to your frontend's deployed origin(s) |
 | `ALLOWED_ORIGIN_REGEX` | No | — | Regex alternative/addition to `ALLOWED_ORIGINS` |
-| `ADMIN_API_KEY` | No | — | Enables `/admin/*` routes (`x-admin-key` header); if unset, those routes return `503` rather than failing startup |
+| `ADMIN_API_KEY` | No | — | Enables `/admin/*` routes and the document-management routes (`x-admin-key` header); if unset, `/admin/*` returns `503` rather than failing startup |
 | `LOCAL_LOGS_DB_PATH` | No | `backend/data/rag_logs.db` | Where analytics are stored (SQLite) |
 | `IMAGES_DIR` | No | `backend/data/images/` | Where persisted images (from RAG documents and chat uploads) are stored |
 | `IMAGE_LINKS_DB_PATH` | No | `backend/data/image_links.db` | SQLite DB linking uploaded images to sessions (powers "that image" follow-ups) |
+| `CONVERSATIONS_DB_PATH` | No | `backend/data/conversations.db` | SQLite write-through store backing `/conversations/{session_id}`, so history survives a Redis TTL expiry or backend restart |
 | `RERANK_MODEL` | No | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used to rerank hybrid retrieval results |
 | `RERANK_TOP_N` | No | `10` | Number of chunks kept after reranking |
 | `ENABLE_QUERY_REWRITE` | No | `true` | Generates alternate query phrasings before retrieval to widen recall; costs one extra fast-tier Groq call per non-trivial query |
 | `RESPONSE_CACHE_TTL_SECONDS` | No | `3600` | TTL for the first-turn exact-match response cache (Redis) |
 | `ENABLE_RAG_EVAL` | No | `false` | Enables LLM-as-judge scoring of RAG responses |
+| `IMAGE_RELEVANCE_THRESHOLD` | No | `0.0` | Minimum relevance score for a retrieved image to be linked into a RAG response |
 | `MAX_MESSAGE_LENGTH` | No | `1000` | Max chat message characters |
 | `MAX_AUDIO_SIZE_MB` | No | `10` | Max audio upload size |
 | `MAX_DOCUMENT_SIZE_MB` | No | `20` | Max document upload size |
+| `MAX_UPLOAD_BYTES` | No | 20MB | Byte-level cap enforced in `document_store.py`, alongside `MAX_DOCUMENT_SIZE_MB` |
 | `MAX_IMAGE_SIZE_MB` | No | `8` | Max image upload size for `/chat/image` |
 | `MAX_TTS_LENGTH` | No | `5000` | Max characters accepted by `/tts/generate` |
 | `LOG_LEVEL` | No | `INFO` | Backend log level |
@@ -170,6 +175,7 @@ ringo/
 │   ├── vectorstore.py       # PDF/PPTX/DOCX/HTML/CSV/XLSX loaders, OCR, image extraction, chunking, BM25+semantic hybrid retrieval
 │   ├── latex_utils.py       # LaTeX/math notation normalization
 │   ├── memory.py            # Redis / in-memory conversation history
+│   ├── conversation_store.py # SQLite write-through store backing GET /conversations/{session_id}
 │   ├── document_store.py    # Local filesystem document storage (upload/delete)
 │   ├── image_store.py       # Local filesystem image storage (data/images/)
 │   ├── image_links.py       # SQLite session→image linking, powers image follow-ups
@@ -201,20 +207,23 @@ ringo/
 
 | Method | Path | Rate limit | Description |
 |---|---|---|---|
+| `GET` | `/` | — | Basic liveness/info response |
 | `GET` | `/health` | — | Vector store status, chunk count, Redis status, Groq reachability |
+| `GET` | `/health/live` | — | Minimal liveness probe (no dependency checks) |
 | `POST` | `/chat/text` | 10/min | Text chat (supports `stream=true`); auto-routes to vision model on image follow-up references |
 | `POST` | `/chat/audio` | 10/min | Audio chat with Whisper transcription |
 | `POST` | `/chat/image` | 10/min | Image + question chat via the vision model, bypassing RAG |
 | `GET` | `/images/{image_id}` | — | Serve a persisted image (extracted from a RAG document or uploaded via chat) |
 | `POST` | `/tts/generate` | 20/min | On-demand TTS generation |
 | `GET` | `/documents/list` | — | List indexed documents with chunk counts |
-| `POST` | `/documents/upload` | 2/min | Upload and index a document |
-| `DELETE` | `/documents/{filename}` | — | Delete a document, its linked images, and rebuild the index |
+| `POST` | `/documents/upload` | 2/min | Upload and index a document (requires `x-admin-key` header) |
+| `DELETE` | `/documents/{filename}` | — | Delete a document, its linked images, and rebuild the index (requires `x-admin-key` header) |
 | `GET` | `/documents/chunks` | — | Fetch chunks for a document (with optional query ranking) |
-| `POST` | `/documents/refresh` | 5/min | Rebuild the vector store from the local documents folder |
+| `POST` | `/documents/refresh` | 5/min | Rebuild the vector store from the local documents folder (requires `x-admin-key` header) |
 | `POST` | `/feedback` | 30/min | Submit feedback on a response |
-| `GET` | `/admin/stats` | — | Aggregate analytics (requires `x-admin-key` header) |
-| `GET` | `/admin/logs` | — | Recent query logs (requires `x-admin-key` header) |
+| `GET` | `/conversations/{session_id}` | — | Recover a session's durable message history from the SQLite write-through store |
+| `GET` | `/admin/stats` | 20/min | Aggregate analytics (requires `x-admin-key` header) |
+| `GET` | `/admin/logs` | 20/min | Recent query logs (requires `x-admin-key` header) |
 
 ---
 
