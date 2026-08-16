@@ -1,4 +1,5 @@
 import asyncio
+import hmac
 import logging
 import os
 import re
@@ -105,7 +106,7 @@ def _require_admin_key(x_admin_key: Optional[str] = Header(None)) -> None:
     configured_key = os.environ.get("ADMIN_API_KEY")
     if not configured_key:
         raise HTTPException(status_code=503, detail="Admin dashboard not configured (ADMIN_API_KEY unset)")
-    if x_admin_key != configured_key:
+    if not hmac.compare_digest(x_admin_key or "", configured_key):
         raise HTTPException(status_code=401, detail="Invalid admin key")
 
 
