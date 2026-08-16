@@ -174,6 +174,17 @@ ALLOWED_ORIGIN_REGEX = os.environ.get("ALLOWED_ORIGIN_REGEX")
 logger.info("CORS static origins: %s", ALLOWED_ORIGINS)
 logger.info("CORS origin regex: %s", ALLOWED_ORIGIN_REGEX)
 
+# allow_credentials=True below means an overly broad regex here (e.g. ".*",
+# "https?://.*") would let CORSMiddleware reflect Access-Control-Allow-Origin
+# for literally any site while still allowing credentialed requests — warn
+# loudly since there's no framework-level guardrail against that.
+if ALLOWED_ORIGIN_REGEX and re.search(r"^\^?\.\*\$?$|\.\*.*\.\*|\(\?\:.*\)\*\$?$", ALLOWED_ORIGIN_REGEX):
+    logger.warning(
+        "ALLOWED_ORIGIN_REGEX (%r) looks overly permissive for use with "
+        "allow_credentials=True — double-check it doesn't match arbitrary origins.",
+        ALLOWED_ORIGIN_REGEX,
+    )
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
