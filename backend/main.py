@@ -699,7 +699,8 @@ async def get_conversation(session_id: str):
 
 
 @app.get("/admin/stats")
-async def admin_stats(days: int = 7, _: None = Depends(_require_admin_key)):
+@limiter.limit("20/minute")
+async def admin_stats(request: Request, days: int = 7, _: None = Depends(_require_admin_key)):
     if days < 1 or days > 90:
         raise HTTPException(status_code=400, detail="days must be between 1 and 90")
     try:
@@ -710,7 +711,8 @@ async def admin_stats(days: int = 7, _: None = Depends(_require_admin_key)):
 
 
 @app.get("/admin/logs")
-async def admin_logs_list(days: int = 1, limit: int = 100, _: None = Depends(_require_admin_key)):
+@limiter.limit("20/minute")
+async def admin_logs_list(request: Request, days: int = 1, limit: int = 100, _: None = Depends(_require_admin_key)):
     if days < 1 or days > 90:
         raise HTTPException(status_code=400, detail="days must be between 1 and 90")
     if limit < 1 or limit > 500:
