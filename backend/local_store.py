@@ -70,10 +70,20 @@ def insert_log(entity: Dict[str, Any]) -> None:
         )
 
 
+# Only these columns may ever appear on the left-hand side of an UPDATE ...
+# SET clause. Column names below can't be parameterized like values can, so
+# this allow-list is what keeps `updates` safe even if a future caller ever
+# builds it from request input instead of today's fixed literal dicts.
+_UPDATABLE_COLUMNS = {"faithfulness", "answer_relevance", "context_relevance", "user_rating"}
+
+
 def update_log(partition_key: str, row_key: str, updates: Dict[str, Any]) -> None:
     _ensure_schema()
     if not updates:
         return
+    unknown = set(updates) - _UPDATABLE_COLUMNS
+    if unknown:
+        raise ValueError(f"update_log: disallowed column(s): {sorted(unknown)}")
     cols = ", ".join(f"{key} = ?" for key in updates)
     with _connect() as conn:
         conn.execute(
