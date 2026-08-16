@@ -8,6 +8,11 @@ export interface AttachedImage {
   mimeType: string;
 }
 
+// Mirrors the backend's MAX_IMAGE_SIZE_MB default — the server enforces the
+// real limit, this just avoids a doomed upload round-trip for an obviously
+// oversized file.
+const MAX_IMAGE_SIZE_MB = 8;
+
 interface ChatInputProps {
   onSendText: (message: string, image?: AttachedImage) => void;
   onSendAudio: () => void;
@@ -58,6 +63,10 @@ export function ChatInput({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+      window.alert(`"${file.name}" exceeds the ${MAX_IMAGE_SIZE_MB}MB limit.`);
+      return;
+    }
     const uri = URL.createObjectURL(file);
     setAttachedImage({ uri, mimeType: file.type || 'image/jpeg' });
   };
