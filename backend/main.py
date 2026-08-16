@@ -567,7 +567,7 @@ async def generate_tts(
 
 @app.post("/documents/refresh")
 @limiter.limit("5/minute")
-async def refresh_docs(request: Request):
+async def refresh_docs(request: Request, _: None = Depends(_require_admin_key)):
     try:
         async with _refresh_lock:
             await asyncio.to_thread(refresh_documents)
@@ -607,10 +607,12 @@ async def list_documents():
 
 @app.post("/documents/upload")
 @limiter.limit("2/minute")
-async def upload_doc(request: Request, file: UploadFile = File(...)):
-    ext = os.path.splitext(file.filename or "")[1].lower()
+async def upload_doc(request: Request, file: UploadFile = File(...), _: None = Depends(_require_admin_key)):
+    filename = os.path.basename(file.filename or "")
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=415, detail=f"Unsupported file type '{ext}'. Allowed: {', '.join(SUPPORTED_UPLOAD_EXTENSIONS)}")
+    _reject_oversized_upload(request, MAX_DOCUMENT_SIZE_MB)
 
     data = await file.read()
     if len(data) > MAX_DOCUMENT_SIZE_MB * 1024 * 1024:
@@ -619,10 +621,13 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        upload_document(file.filename, data)
+        upload_document(filename, data)
         async with _refresh_lock:
-            await asyncio.to_thread(index_document, file.filename)
-        return JSONResponse(content={"success": True, "filename": file.filename, "message": f"'{file.filename}' uploaded and indexed successfully"})
+            # Basenamed above — index_document/add_document must never be handed
+            # a raw client-controlled path (traversal risk otherwise: see #B in
+            # the security review).
+            await asyncio.to_thread(index_document, filename)
+        return JSONResponse(content={"success": True, "filename": filename, "message": f"'{filename}' uploaded and indexed successfully"})
     except HTTPException:
         raise
     except Exception as e:
@@ -631,7 +636,8 @@ async def upload_doc(request: Request, file: UploadFile = File(...)):
 
 
 @app.delete("/documents/{filename}")
-async def delete_doc(filename: str):
+async def delete_doc(filename: str, _: None = Depends(_require_admin_key)):
+    filename = os.path.basename(filename)
     ext = os.path.splitext(filename)[1].lower()
     if ext not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Invalid filename")
