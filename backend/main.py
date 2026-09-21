@@ -26,6 +26,7 @@ from image_links import record_image_link, get_latest_image_for_session
 import admin as admin_logs
 
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor
 
 load_dotenv()
 
@@ -54,6 +55,35 @@ MAX_SESSION_ID_LENGTH = 128
 pipeline = None
 _refresh_lock = asyncio.Lock()
 
+
+# Background eval gets its own small pool. Previously it was submitted to the
+# DEFAULT executor (run_in_executor(None, ...)) — the same bounded pool that
+# asyncio.to_thread uses for retrieval and reranking — so eval work competed
+# directly with request-critical work, and each task blocks on three Groq calls.
+# The returned future was also discarded, silently swallowing every failure.
+_eval_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="eval")
+
+
+def _log_eval_failure(fut) -> None:
+    exc = fut.exception()
+    if exc is not None:
+        logger.warning("Background eval failed: %s", exc)
+
+
+def _submit_eval(log_id: str, partition_key: str, query: str, context: str, answer: str) -> None:
+    if not ENABLE_RAG_EVAL:
+        return
+    _eval_executor.submit(
+        _eval_and_update, log_id, partition_key, query, context, answer
+    ).add_done_callback(_log_eval_failure)
+
+
+# GET /conversations has no auth by design — the session_id IS the bearer
+# capability (see frontend use-conversations.tsx). That only holds if the value is
+# genuinely unguessable, so reject anything that isn't a client-minted UUID token.
+# In particular this rejects the old "default" sentinel, which multiple clients
+# could land on simultaneously and thereby share one server-side conversation.
+_SESSION_ID_RE = re.compile(r"^session_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 def _validate_session_id(session_id: str) -> None:
     if len(session_id) > MAX_SESSION_ID_LENGTH:
@@ -141,6 +171,7 @@ async def lifespan(app: FastAPI):
 
 
 # Verify API key early
+    _eval_executor.shutdown(wait=False, cancel_futures=True)
 if not os.environ.get("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY missing!")
 
@@ -365,9 +396,7 @@ async def text_chat(
             log_id, partition_key = log_rag_call(
                 message, sanitized_response, _citation_filenames(sources), 0, context, model_tier=model_tier
             )
-            asyncio.get_running_loop().run_in_executor(
-                None, _eval_and_update, log_id, partition_key, message, context, sanitized_response
-            )
+            _submit_eval(log_id, partition_key, message, context, sanitized_response)
             yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
             yield f"data: {json.dumps({'type': 'images', 'value': images})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources, 'images': images})}\n\n"
