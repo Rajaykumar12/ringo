@@ -261,7 +261,8 @@ export interface DocumentChunk {
 
 export const getDocumentChunks = async (
   source: string,
-  query: string = ''
+  query: string = '',
+  adminKey: string
 ): Promise<{ source: string; chunks: DocumentChunk[] }> => {
   const params = new URLSearchParams({ source });
   if (query) params.append('query', query);
