@@ -16,17 +16,18 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from pipeline import PipelineOrchestrator, TranscriptionError
-from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, rag_system as _rag_ref, _format_chunk, _sanitize_and_filter_images, _sanitize_citations, _sanitize_stream_buffer, _relevant_image_ids, _collect_images, _build_source_citations, _citation_filenames
+from rag import initialize_rag, refresh_documents, get_rag_response, index_document, deindex_document, rerank_documents, pick_model, prepare_context, rag_system as _rag_ref, _format_chunk, _sanitize_and_filter_images, _sanitize_citations, _sanitize_stream_buffer, _relevant_image_ids, _collect_images, _build_source_citations, _citation_filenames, _append_caveat_if_low_context
 from rag_logger import log_rag_call, update_eval_scores, log_feedback
 from eval import evaluate_rag
 from document_store import upload_document, delete_document
 from vision import describe_image
 from image_store import save_image, load_image
 from image_links import record_image_link, get_latest_image_for_session
+from response_cache import make_cache_key, get_cached_response, set_cached_response
 import admin as admin_logs
 
-from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 
 load_dotenv()
 
@@ -55,7 +56,6 @@ MAX_SESSION_ID_LENGTH = 128
 pipeline = None
 _refresh_lock = asyncio.Lock()
 
-
 # Background eval gets its own small pool. Previously it was submitted to the
 # DEFAULT executor (run_in_executor(None, ...)) — the same bounded pool that
 # asyncio.to_thread uses for retrieval and reranking — so eval work competed
@@ -77,13 +77,6 @@ def _submit_eval(log_id: str, partition_key: str, query: str, context: str, answ
         _eval_and_update, log_id, partition_key, query, context, answer
     ).add_done_callback(_log_eval_failure)
 
-
-# GET /conversations has no auth by design — the session_id IS the bearer
-# capability (see frontend use-conversations.tsx). That only holds if the value is
-# genuinely unguessable, so reject anything that isn't a client-minted UUID token.
-# In particular this rejects the old "default" sentinel, which multiple clients
-# could land on simultaneously and thereby share one server-side conversation.
-_SESSION_ID_RE = re.compile(r"^session_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 def _validate_session_id(session_id: str) -> None:
     if len(session_id) > MAX_SESSION_ID_LENGTH:
@@ -168,10 +161,10 @@ async def lifespan(app: FastAPI):
     logger.info("Server ready")
     yield
     logger.info("Shutting down...")
+    _eval_executor.shutdown(wait=False, cancel_futures=True)
 
 
 # Verify API key early
-    _eval_executor.shutdown(wait=False, cancel_futures=True)
 if not os.environ.get("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY missing!")
 
@@ -313,7 +306,10 @@ async def text_chat(
     stream: bool = Form(False),
     session_id: str = Form("default"),
 ):
-    from rag import rag_system, initialize_rag
+    # Module reference, not `from rag import rag_system`: initialize_rag() rebinds
+    # rag.rag_system, which a from-import snapshot taken here would never see —
+    # leaving a None local that then raises on `.vectorstore`.
+    import rag as rag_module
 
     if len(message) > MAX_MESSAGE_LENGTH:
         raise HTTPException(status_code=413, detail=f"Message too long (max {MAX_MESSAGE_LENGTH} characters)")
@@ -329,33 +325,62 @@ async def text_chat(
                 yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': [], 'images': image_followup['images']})}\n\n"
                 return
 
-            if not rag_system:
-                await asyncio.to_thread(initialize_rag)
+            if not rag_module.rag_system:
+                await asyncio.to_thread(rag_module.initialize_rag)
 
-            if not rag_system.vectorstore:
+            if not rag_module.rag_system or not rag_module.rag_system.vectorstore:
                 yield f"data: {json.dumps({'type': 'content', 'value': 'No documents indexed.'})}\n\n"
                 yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': [], 'images': []})}\n\n"
                 return
 
-            retriever = rag_system.get_retriever()
-            docs = await asyncio.to_thread(retriever.invoke, message)
-            docs = await asyncio.to_thread(rerank_documents, message, docs)
-            sources = _build_source_citations(docs)
-            valid_citation_indices = set(range(1, len(docs) + 1))
-            relevant_image_ids = await asyncio.to_thread(_relevant_image_ids, message, docs)
-            candidate_images = _collect_images(docs, relevant_image_ids)
-            context = (
-                "\n\n".join(_format_chunk(d, relevant_image_ids, index=i) for i, d in enumerate(docs, start=1))
-                if docs else "No relevant context found."
-            )
+            # Shared with the non-streaming path (rag.py) so the two can't drift:
+            # this branch previously did its own single-variant retrieval and never
+            # consulted the response cache, so the default UX paid full retrieval +
+            # full generation for every repeated question.
+            prep = await asyncio.to_thread(prepare_context, message)
+            docs = prep["docs"]
+            sources = prep["sources"]
+            valid_citation_indices = prep["valid_citation_indices"]
+            relevant_image_ids = prep["relevant_image_ids"]
+            candidate_images = prep["candidate_images"]
+            context = prep["context"]
+            low_context = prep["low_context"]
 
             yield f"data: {json.dumps({'type': 'sources', 'value': sources})}\n\n"
 
-            model_tier = pick_model(message, docs, context)
+            # Exact-match cache is only sound on a session's first turn — a cached
+            # answer doesn't reflect any prior conversation context.
+            from memory import get_session_history
+            history = await asyncio.to_thread(get_session_history, session_id)
+            is_first_turn = len(history.messages) == 0
+            cache_key = make_cache_key(message, context) if is_first_turn else None
+            if cache_key:
+                cached = await asyncio.to_thread(get_cached_response, cache_key)
+                if cached is not None:
+                    logger.info("Response cache hit for first-turn streaming query")
+                    cached, cache_images = _sanitize_and_filter_images(
+                        cached, candidate_images, relevant_image_ids
+                    )
+                    cached = _sanitize_citations(cached, valid_citation_indices)
+                    history.add_user_message(message)
+                    history.add_ai_message(cached)
+                    cached = _append_caveat_if_low_context(cached, low_context)
+                    # Still logged: the client needs a log_id to attach feedback to,
+                    # and a cache hit is a real served turn for the admin dashboard.
+                    log_id, partition_key = log_rag_call(
+                        message, cached, _citation_filenames(sources), 0, context, model_tier="cache"
+                    )
+                    yield f"data: {json.dumps({'type': 'content', 'value': cached})}\n\n"
+                    yield f"data: {json.dumps({'type': 'log_id', 'value': log_id, 'log_date': partition_key})}\n\n"
+                    yield f"data: {json.dumps({'type': 'images', 'value': cache_images})}\n\n"
+                    yield f"data: {json.dumps({'type': 'done', 'value': '', 'sources': sources, 'images': cache_images})}\n\n"
+                    return
+
+            model_tier = pick_model(message, docs, context, len(history.messages))
             chain = (
-                rag_system.rag_chain_fast_with_history
-                if model_tier == "fast" and rag_system.rag_chain_fast_with_history
-                else rag_system.rag_chain_with_history
+                rag_module.rag_system.rag_chain_fast_with_history
+                if model_tier == "fast" and rag_module.rag_system.rag_chain_fast_with_history
+                else rag_module.rag_system.rag_chain_with_history
             )
 
             full_response = ""
@@ -392,6 +417,15 @@ async def text_chat(
             # idempotent for the text itself but still needed to compute the final image list.
             _, images = _sanitize_and_filter_images(full_response, candidate_images, relevant_image_ids)
             sanitized_response = _sanitize_citations(full_response, valid_citation_indices)
+
+            if cache_key and sanitized_response.strip():
+                set_cached_response(cache_key, sanitized_response)  # cache pre-caveat
+
+            caveat = _append_caveat_if_low_context(sanitized_response, low_context)
+            if caveat != sanitized_response:
+                trailer = caveat[len(sanitized_response):]
+                sanitized_response = caveat
+                yield f"data: {json.dumps({'type': 'content', 'value': trailer})}\n\n"
 
             log_id, partition_key = log_rag_call(
                 message, sanitized_response, _citation_filenames(sources), 0, context, model_tier=model_tier

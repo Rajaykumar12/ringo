@@ -2,10 +2,12 @@
 rag.py — Public API for the RAG system.
 Initializes the singleton instance and provides interface methods.
 """
+import hashlib
 import logging
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List, Optional, Tuple
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
@@ -401,6 +403,83 @@ def deindex_document(filename: str):
     rag_system.remove_document(filename)
 
 
+def prepare_context(query: str) -> Dict[str, Any]:
+    """Single source of truth for the retrieval half of a RAG turn.
+
+    Both chat paths call this — main.py's streaming branch and get_rag_response()
+    below. They used to be hand-maintained copies of the same pipeline and had
+    drifted: query rewriting and the response cache existed only on the
+    non-streaming side, so the default (streaming) UX paid full retrieval + full
+    generation for every repeated question and returned different answers from
+    the same query.
+
+    Returns everything the generation half needs: docs, citations, the numbered
+    context string, and the image allow-list the sanitizers validate against.
+    """
+    retriever = rag_system.get_retriever()
+
+    # Original query plus any rewritten variants. These retrievals are fully
+    # independent, so fan them out — run serially this was rewrite + 3x the cost
+    # of a hybrid BM25 + embedding + Chroma round-trip. Reranking below still
+    # scores against the original query, so this only widens recall; it doesn't
+    # change what "relevant" means.
+    variants = [query] + rewrite_query(query)
+    if len(variants) == 1:
+        results = [retriever.invoke(query)]
+    else:
+        with ThreadPoolExecutor(max_workers=len(variants)) as pool:
+            results = list(pool.map(retriever.invoke, variants))  # order preserved
+
+    # Deduplicate by content hash. sha256, not the builtin hash(): str hashing is
+    # salted per process via PYTHONHASHSEED, which makes dedup non-reproducible
+    # across restarts.
+    seen: set = set()
+    docs: List[Document] = []
+    for batch in results:
+        for d in batch:
+            h = hashlib.sha256(d.page_content.strip().encode("utf-8")).digest()
+            if h not in seen:
+                seen.add(h)
+                docs.append(d)
+
+    # Cross-encoder re-rank + cutoff — the BM25+semantic ensemble over-retrieves,
+    # so this trims to the most relevant chunks before they hit the prompt
+    docs = rerank_documents(query, docs)
+
+    # For structural queries, prepend dedicated structure chunks
+    if _is_structural_query(query) and rag_system.vectorstore:
+        try:
+            result = rag_system.vectorstore._collection.get(
+                where={"chunk_type": "structure"},
+                include=["documents", "metadatas"],
+            )
+            struct_docs = [
+                Document(page_content=t, metadata=m)
+                for t, m in zip(result["documents"], result["metadatas"])
+                if t and t.strip()
+            ]
+            docs = struct_docs + docs
+        except Exception as e:
+            logger.warning("Structure injection failed (non-fatal): %s", e)
+
+    # Structured, 1-indexed source citations (one per chunk) and any images tied to
+    # the retrieved chunks. Context chunks are numbered [1], [2], ... to match —
+    # the system prompt instructs the LLM to cite that number inline.
+    relevant_image_ids = _relevant_image_ids(query, docs)
+    return {
+        "docs": docs,
+        "sources": _build_source_citations(docs),
+        "valid_citation_indices": set(range(1, len(docs) + 1)),
+        "relevant_image_ids": relevant_image_ids,
+        "candidate_images": _collect_images(docs, relevant_image_ids),
+        "context": (
+            "\n\n".join(_format_chunk(d, relevant_image_ids, index=i) for i, d in enumerate(docs, start=1))
+            if docs else "No relevant context found."
+        ),
+        "low_context": len(docs) == 0,
+    }
+
+
 def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
     """
     Returns dict: {"response": str, "sources": list[dict], "context": str, ...}
@@ -423,56 +502,14 @@ def get_rag_response(query: str, session_id: str = "default") -> Dict[str, Any]:
         rag_system._build_rag_chain()
 
     try:
-        # Retrieve relevant docs — original query plus any rewritten variants, merged.
-        # Reranking below still scores against the original query, so this only widens
-        # recall; it doesn't change what "relevant" means.
-        retriever = rag_system.get_retriever()
-        docs: List[Document] = []
-        for variant in [query] + rewrite_query(query):
-            docs.extend(retriever.invoke(variant))
-
-        # Deduplicate by content hash
-        seen: set = set()
-        deduped = []
-        for d in docs:
-            h = hash(d.page_content.strip())
-            if h not in seen:
-                seen.add(h)
-                deduped.append(d)
-        docs = deduped
-
-        # Cross-encoder re-rank + cutoff — the BM25+semantic ensemble over-retrieves,
-        # so this trims to the most relevant chunks before they hit the prompt
-        docs = rerank_documents(query, docs)
-
-        # For structural queries, prepend dedicated structure chunks
-        if _is_structural_query(query) and rag_system.vectorstore:
-            try:
-                result = rag_system.vectorstore._collection.get(
-                    where={"chunk_type": "structure"},
-                    include=["documents", "metadatas"],
-                )
-                struct_docs = [
-                    Document(page_content=t, metadata=m)
-                    for t, m in zip(result["documents"], result["metadatas"])
-                    if t and t.strip()
-                ]
-                docs = struct_docs + docs
-            except Exception as e:
-                logger.warning("Structure injection failed (non-fatal): %s", e)
-
-        # Structured, 1-indexed source citations (one per chunk) and any images tied to
-        # the retrieved chunks. Context chunks are numbered [1], [2], ... to match —
-        # the system prompt instructs the LLM to cite that number inline.
-        sources = _build_source_citations(docs)
-        valid_citation_indices = set(range(1, len(docs) + 1))
-        relevant_image_ids = _relevant_image_ids(query, docs)
-        images = _collect_images(docs, relevant_image_ids)
-        context = (
-            "\n\n".join(_format_chunk(d, relevant_image_ids, index=i) for i, d in enumerate(docs, start=1))
-            if docs else "No relevant context found."
-        )
-        low_context = len(docs) == 0
+        prep = prepare_context(query)
+        docs = prep["docs"]
+        sources = prep["sources"]
+        valid_citation_indices = prep["valid_citation_indices"]
+        relevant_image_ids = prep["relevant_image_ids"]
+        images = prep["candidate_images"]
+        context = prep["context"]
+        low_context = prep["low_context"]
 
         # Exact-match response cache — only safe on a session's first turn, since a
         # cached answer doesn't reflect any prior conversation context.
