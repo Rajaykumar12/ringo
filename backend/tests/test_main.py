@@ -68,3 +68,49 @@ def test_health_reports_degraded_status_when_dependencies_unavailable():
     assert result["vector_store"] == "uninitialized"
     assert result["groq"] == "unreachable"
     assert result["redis"] in ("connected", "unavailable (using in-memory fallback)")
+
+
+# ── Rate-limit keying behind a reverse proxy (SEC-4) ──────────────────────────
+
+class _FakeClient:
+    def __init__(self, host): self.host = host
+
+
+class _FakeRequest:
+    def __init__(self, peer, method="POST", forwarded=None):
+        self.method = method
+        self.client = _FakeClient(peer)
+        self.headers = {"x-forwarded-for": forwarded} if forwarded else {}
+
+
+def test_rate_limit_key_uses_peer_when_no_proxy_configured(monkeypatch):
+    """Default posture: no proxy is trusted, so a spoofed header is ignored."""
+    monkeypatch.setattr(main, "TRUSTED_PROXY_IPS", set())
+    req = _FakeRequest("203.0.113.9", forwarded="1.2.3.4")
+    assert main._rate_limit_key(req) == "203.0.113.9"
+
+
+def test_rate_limit_key_honours_forwarded_from_trusted_proxy(monkeypatch):
+    """Behind the configured proxy every request shares one peer address, so the
+    originating client must come from X-Forwarded-For or nobody is limited."""
+    monkeypatch.setattr(main, "TRUSTED_PROXY_IPS", {"172.18.0.3"})
+    req = _FakeRequest("172.18.0.3", forwarded="203.0.113.7, 172.18.0.3")
+    assert main._rate_limit_key(req) == "203.0.113.7"  # left-most = originating client
+
+
+def test_rate_limit_key_ignores_forwarded_from_untrusted_peer(monkeypatch):
+    """A direct caller must not be able to mint its own bucket by sending the header."""
+    monkeypatch.setattr(main, "TRUSTED_PROXY_IPS", {"172.18.0.3"})
+    req = _FakeRequest("203.0.113.9", forwarded="10.0.0.1")
+    assert main._rate_limit_key(req) == "203.0.113.9"
+
+
+def test_rate_limit_key_distinguishes_clients_behind_one_proxy(monkeypatch):
+    monkeypatch.setattr(main, "TRUSTED_PROXY_IPS", {"172.18.0.3"})
+    a = main._rate_limit_key(_FakeRequest("172.18.0.3", forwarded="203.0.113.1"))
+    b = main._rate_limit_key(_FakeRequest("172.18.0.3", forwarded="203.0.113.2"))
+    assert a != b
+
+
+def test_rate_limit_key_exempts_cors_preflight():
+    assert main._rate_limit_key(_FakeRequest("203.0.113.9", method="OPTIONS")) is None

@@ -178,13 +178,31 @@ async def lifespan(app: FastAPI):
 if not os.environ.get("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY missing!")
 
-# Initialize rate limiter — skip OPTIONS (CORS preflight) requests
+# Initialize rate limiter — skip OPTIONS (CORS preflight) requests.
+# get_remote_address() returns the TCP peer, which behind the reverse proxy in
+# docker-compose.yml is the proxy itself — every client would share one bucket,
+# so a single abuser rate-limits the whole deployment and nobody is actually
+# limited per-client. Trust X-Forwarded-For, but ONLY from proxies we configured:
+# trusting it unconditionally makes the limiter trivially spoofable instead.
+TRUSTED_PROXY_IPS = {ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()}
+if TRUSTED_PROXY_IPS:
+    logger.info("Trusting X-Forwarded-For from proxies: %s", sorted(TRUSTED_PROXY_IPS))
+
+
 def _rate_limit_key(request: Request) -> str:
     if request.method == "OPTIONS":
         return None  # type: ignore[return-value]  # None exempts the request
-    return get_remote_address(request)
+    peer = request.client.host if request.client else "unknown"
+    if peer in TRUSTED_PROXY_IPS:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",")[0].strip()  # left-most = originating client
+    return peer
 
-limiter = Limiter(key_func=_rate_limit_key)
+
+# Redis-backed so limits survive a restart and are shared across replicas; slowapi
+# falls back to in-memory automatically if the URL is unreachable.
+limiter = Limiter(key_func=_rate_limit_key, storage_uri=os.environ.get("REDIS_URL"))
 
 app = FastAPI(title="AI Chat API", version="2.0.0", lifespan=lifespan)
 app.state.limiter = limiter
@@ -530,8 +548,12 @@ async def image_chat(
 
 
 @app.get("/images/{image_id}")
-async def get_image(image_id: str):
-    """Serve a stored image (extracted from a RAG document or uploaded in chat)."""
+@limiter.limit("120/minute")
+async def get_image(request: Request, image_id: str):
+    """Serve a stored image (extracted from a RAG document or uploaded in chat).
+    Unauthenticated by design (the 128-bit uuid4 id is the capability), but limited
+    so it can't be used as an unmetered byte firehose. Generous enough for normal
+    browsing — a single answer can embed up to MAX_RESPONSE_IMAGES."""
     from fastapi.responses import Response
     result = load_image(image_id)
     if result is None:
@@ -821,4 +843,17 @@ async def admin_logs_list(request: Request, days: int = 1, limit: int = 100, _: 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+
+    # proxy_headers alone is not enough: uvicorn only rewrites client.host from
+    # X-Forwarded-For for peers listed in forwarded_allow_ips, and its default of
+    # "127.0.0.1" never matches a container on the compose bridge network. Without
+    # both, _rate_limit_key() falls back to the proxy's address and every client
+    # shares one bucket. Same allow-list the app uses, so the two can't disagree.
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info",
+        proxy_headers=bool(TRUSTED_PROXY_IPS),
+        forwarded_allow_ips=",".join(sorted(TRUSTED_PROXY_IPS)) or None,
+    )

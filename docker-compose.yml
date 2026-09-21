@@ -20,6 +20,10 @@ services:
     env_file: ./backend/.env
     environment:
       - REDIS_URL=redis://redis:6379
+      # The frontend's nginx is the only thing in front of the backend, so its
+      # container IP is the one allowed to assert X-Forwarded-For. Without this the
+      # rate limiter keys every request on the proxy and one client throttles all.
+      - TRUSTED_PROXY_IPS=${TRUSTED_PROXY_IPS:-}
     volumes:
       - ./backend/documents:/app/documents
       - ./backend/chroma_db:/app/chroma_db
