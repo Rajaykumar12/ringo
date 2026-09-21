@@ -3,7 +3,7 @@
 All backend settings are environment variables, read from `backend/.env` (see
 `backend/.env.example`). Only `GROQ_API_KEY` is required to start.
 
-Set `ADMIN_API_KEY` too if you want to add documents — the Documents panel and the
+Set `ADMIN_API_KEY` too if you want to add documents. The Documents panel and the
 Admin dashboard are both gated behind it.
 
 ---
@@ -12,12 +12,12 @@ Admin dashboard are both gated behind it.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GROQ_API_KEY` | Yes | — | Groq API key for text and vision models |
+| `GROQ_API_KEY` | Yes | none | Groq API key for text and vision models |
 | `VISION_MODEL` | No | `qwen/qwen3.8-27b` | Groq model used for image chat and image follow-ups |
 | `REDIS_URL` | No | `redis://localhost:6379` | Session memory and response cache (falls back to in-memory) |
-| `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins — set to your frontend's deployed origin(s) |
-| `ALLOWED_ORIGIN_REGEX` | No | — | Regex alternative/addition to `ALLOWED_ORIGINS` |
-| `ADMIN_API_KEY` | No | — | Enables `/admin/*` and **all** `/documents/*` routes, reads included (`x-admin-key` header); if unset, those routes return `503` rather than failing startup |
+| `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins. Set this to your frontend's deployed origin(s) |
+| `ALLOWED_ORIGIN_REGEX` | No | none | Regex alternative/addition to `ALLOWED_ORIGINS` |
+| `ADMIN_API_KEY` | No | none | Enables `/admin/*` and **all** `/documents/*` routes, reads included (`x-admin-key` header); if unset, those routes return `503` rather than failing startup |
 | `LOCAL_LOGS_DB_PATH` | No | `backend/data/rag_logs.db` | Where analytics are stored (SQLite) |
 | `IMAGES_DIR` | No | `backend/data/images/` | Where persisted images (from RAG documents and chat uploads) are stored |
 | `IMAGE_LINKS_DB_PATH` | No | `backend/data/image_links.db` | SQLite DB linking uploaded images to sessions (powers "that image" follow-ups) |
@@ -34,20 +34,20 @@ Admin dashboard are both gated behind it.
 | `MAX_UPLOAD_BYTES` | No | 20MB | Byte-level cap enforced in `document_store.py`, alongside `MAX_DOCUMENT_SIZE_MB` |
 | `MAX_IMAGE_SIZE_MB` | No | `8` | Max image upload size for `/chat/image` |
 | `MAX_TTS_LENGTH` | No | `1500` | Max characters accepted by `/tts/generate` |
-| `TRUSTED_PROXY_IPS` | No | — | Comma-separated IPs of reverse proxies allowed to set `X-Forwarded-For`. **Required behind a proxy** — otherwise rate limiting keys every request on the proxy's own address, so all clients share one bucket and a single caller throttles everyone. Only these peers are trusted, so the header can't be spoofed by direct callers. Also enables uvicorn's `--proxy-headers`/`--forwarded-allow-ips` |
+| `TRUSTED_PROXY_IPS` | No | none | Comma-separated IPs of reverse proxies allowed to set `X-Forwarded-For`. **Required behind a proxy.** Otherwise rate limiting keys every request on the proxy's own address, so all clients share one bucket and a single caller throttles everyone. Only these peers are trusted, so the header can't be spoofed by direct callers. Also enables uvicorn's `--proxy-headers`/`--forwarded-allow-ips` |
 | `LOG_LEVEL` | No | `INFO` | Backend log level |
 
 ---
 
 ## Frontend build-time variable
 
-`VITE_API_URL` — the backend's URL, baked in at build time
+`VITE_API_URL` is the backend's URL, baked in at build time
 (`frontend/.env.local` for dev, or as a Docker build arg).
 
 **You do not need to set this for `docker compose up.`** The bundled `nginx.conf`
 proxies the API paths to the backend container, so the frontend and backend share one
 origin and the default same-origin fallback resolves correctly. Set it only when the
-frontend is served from a different origin than the API — see
+frontend is served from a different origin than the API. See
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
@@ -65,5 +65,5 @@ sudo dnf install tesseract tesseract-langpack-eng
 sudo apt install tesseract-ocr tesseract-ocr-eng
 ```
 
-Without Tesseract, documents still index — you just lose text extracted from images
-inside them (figures, charts, scanned pages).
+Without Tesseract, documents still index. You just lose text extracted from images
+inside them, such as figures, charts and scanned pages.

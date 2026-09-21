@@ -2,9 +2,9 @@
 
 > Ask questions about your own PDFs, slides and spreadsheets. Runs entirely on your machine.
 
-Ringo is a chat app for your own documents. You give it your files — a textbook, a
-stack of reports, meeting slides, a spreadsheet — and then just ask questions about
-them in plain language.
+Ringo is a chat app for your own documents. You give it your files, like a textbook,
+a stack of reports, meeting slides or a spreadsheet, and then ask questions about them
+in plain language.
 
 Every answer tells you where it came from, with clickable references back to the exact
 page or slide, so you can check it rather than take its word for it. You can type your
@@ -22,7 +22,7 @@ your question and the relevant excerpts are sent to the language model.
   the citation expands to show you the source text. Made-up references are filtered
   out rather than shown.
 - **Reads the formats you already have.** PDF, Word, PowerPoint, Excel, CSV, HTML and
-  Markdown — including text inside images, charts and scanned pages.
+  Markdown. It also reads text inside images, charts and scanned pages.
 - **Talk to it.** Ask by voice, get answers read aloud, or stick to typing.
 - **Yours to run.** No subscription, no vendor account, no documents uploaded to
   anyone else's server.
@@ -32,9 +32,9 @@ your question and the relevant excerpts are sent to the language model.
 ## Requirements
 
 - [Docker](https://docs.docker.com/get-started/get-docker/) with Compose
-- A **free** [Groq API key](https://console.groq.com/keys) — this is the only external
+- A **free** [Groq API key](https://console.groq.com/keys). This is the only external
   service, and it's what generates the answers
-- Free disk space — the backend image is large because it bundles PyTorch, and about
+- Free disk space. The backend image is large because it bundles PyTorch, and about
   320 MB of speech and search models download the first time you run it
 
 ---
@@ -74,7 +74,7 @@ The app starts with nothing to talk about, so give it something to read:
 Now ask it something about the file you just added.
 
 > The admin key exists because the document routes can read out the full text of
-> anything you've indexed — it keeps that behind a password rather than open to
+> anything you've indexed. It keeps that behind a password rather than open to
 > anyone who can reach the app.
 
 ---
@@ -103,16 +103,16 @@ sudo dnf install tesseract tesseract-langpack-eng   # Fedora/RHEL
 sudo apt install tesseract-ocr tesseract-ocr-eng    # Ubuntu/Debian
 ```
 
-It's optional — without it everything still works, you just lose text that's inside
+It's optional. Without it everything still works, you just lose text that's inside
 pictures.
 
 ---
 
 ## How it works
 
-When you ask a question, Ringo searches your documents two ways at once — by keyword
-and by meaning — then re-ranks the results so only the most relevant passages are sent
-to the language model along with your question. The model answers from those passages
+When you ask a question, Ringo searches your documents two ways at once, by keyword
+and by meaning. It then re-ranks the results so only the most relevant passages are
+sent to the language model along with your question. The model answers from those passages
 and cites them, and the citations are checked against what was actually retrieved
 before you see them.
 
@@ -120,8 +120,8 @@ Documents are split on paragraph and heading boundaries rather than fixed-size b
 so a passage doesn't get cut mid-thought. Images inside documents are extracted and
 read with OCR, so a chart or a scanned page is searchable too.
 
-For the full picture — the ingestion pipeline, retrieval strategy and project
-layout — see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For the full picture, including the ingestion pipeline, retrieval strategy and
+project layout, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -146,4 +146,4 @@ setup, how to run the tests, and what CI checks.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright © 2026 R Ajay Kumar.
+MIT. See [LICENSE](LICENSE). Copyright © 2026 R Ajay Kumar.

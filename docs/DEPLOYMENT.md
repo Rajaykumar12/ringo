@@ -10,10 +10,10 @@ docker compose up --build -d
 
 ## What persists where
 
-- **Documents** — stored under `backend/documents/`, bind-mounted as a volume so uploads survive container restarts
-- **Vector store** — `backend/chroma_db/`, also volume-mounted
-- **Analytics, conversations & images** — SQLite files and persisted images under `backend/data/` (`rag_logs.db`, `conversations.db`, `image_links.db`, `images/`), volume-mounted alongside the others. Without this mount the write-through conversation store loses its durability the moment the container is recreated
-- **Sessions** — Redis (bundled in `docker-compose.yml`), or an in-memory fallback if unavailable
+- **Documents**: stored under `backend/documents/`, bind-mounted as a volume so uploads survive container restarts
+- **Vector store**: `backend/chroma_db/`, also volume-mounted
+- **Analytics, conversations & images**: SQLite files and persisted images under `backend/data/` (`rag_logs.db`, `conversations.db`, `image_links.db`, `images/`), volume-mounted alongside the others. Without this mount the write-through conversation store loses its durability the moment the container is recreated
+- **Sessions**: Redis (bundled in `docker-compose.yml`), or an in-memory fallback if unavailable
 
 The SQLite stores run in WAL mode with one connection per thread, so concurrent request handlers and background tasks don't serialise into `database is locked`.
 
@@ -46,12 +46,12 @@ and `Referrer-Policy`, and provides the SPA fallback that react-router deep link
 
 ## Production checklist
 
-1. **Admin key** — set `ADMIN_API_KEY`. All `/documents/*` and `/admin/*` routes return `503` until it is, which means you cannot add documents.
-2. **TLS** — put the stack behind nginx/Caddy/Traefik for HTTPS, then **set `TRUSTED_PROXY_IPS`** to that proxy's address. Skipping this silently degrades rate limiting to a single shared bucket for all clients — one caller can then throttle everyone.
-3. **CORS** — only needed if you serve the frontend from a different origin than the API. If so, set `ALLOWED_ORIGINS` (or `ALLOWED_ORIGIN_REGEX`) to the frontend's origin. Note `allow_credentials=True` is on, so an overly broad regex is dangerous; the backend logs a warning if it detects one.
-4. **Split-origin frontend build** — also only for a different-origin deployment: `docker build --build-arg VITE_API_URL=https://api.yourdomain.com ./frontend`. This value is substituted into the CSP `connect-src`/`img-src` in `frontend/nginx.conf` at build time, so a mismatch will block API calls in the browser.
+1. **Admin key**: set `ADMIN_API_KEY`. All `/documents/*` and `/admin/*` routes return `503` until it is, which means you cannot add documents.
+2. **TLS**: put the stack behind nginx/Caddy/Traefik for HTTPS, then **set `TRUSTED_PROXY_IPS`** to that proxy's address. Skipping this silently degrades rate limiting to a single shared bucket for all clients, so one caller can then throttle everyone.
+3. **CORS**: only needed if you serve the frontend from a different origin than the API. If so, set `ALLOWED_ORIGINS` (or `ALLOWED_ORIGIN_REGEX`) to the frontend's origin. Note `allow_credentials=True` is on, so an overly broad regex is dangerous; the backend logs a warning if it detects one.
+4. **Split-origin frontend build**: again only for a different-origin deployment. Run `docker build --build-arg VITE_API_URL=https://api.yourdomain.com ./frontend`. This value is substituted into the CSP `connect-src`/`img-src` in `frontend/nginx.conf` at build time, so a mismatch will block API calls in the browser.
 
-Steps 3 and 4 go together — do both or neither. The default same-origin setup needs
+Steps 3 and 4 go together, so do both or neither. The default same-origin setup needs
 neither.
 
 ---
@@ -60,8 +60,8 @@ neither.
 
 - **Redis is optional but recommended.** Without it, session memory and the response
   cache fall back to per-process in-memory stores, which means they do not survive a
-  restart and are not shared across replicas. Conversation history still persists —
-  SQLite is written through on every turn regardless.
+  restart and are not shared across replicas. Conversation history still persists,
+  because SQLite is written through on every turn regardless.
 - **Rate limits are stored in Redis** when `REDIS_URL` is reachable, so they hold
   across restarts and are shared by all replicas. Without it they are per-process.
 - **The vector store and SQLite files are local disk.** Running more than one backend

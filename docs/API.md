@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL is the backend — `http://localhost:8000` when running it directly, or the
+The base URL is the backend, `http://localhost:8000` when running it directly, or the
 same origin as the web app under `docker compose` (nginx proxies these paths through).
 
 Routes marked `x-admin-key` require that header to match `ADMIN_API_KEY`; they return
@@ -12,17 +12,17 @@ Routes marked `x-admin-key` require that header to match `ADMIN_API_KEY`; they r
 
 | Method | Path | Rate limit | Description |
 |---|---|---|---|
-| `GET` | `/` | — | Basic liveness/info response |
-| `GET` | `/health` | — | Vector store status, chunk count, Redis status, Groq reachability |
-| `GET` | `/health/live` | — | Minimal liveness probe (no dependency checks) |
+| `GET` | `/` | none | Basic liveness/info response |
+| `GET` | `/health` | none | Vector store status, chunk count, Redis status, Groq reachability |
+| `GET` | `/health/live` | none | Minimal liveness probe (no dependency checks) |
 | `POST` | `/chat/text` | 10/min | Text chat (supports `stream=true`); auto-routes to vision model on image follow-up references |
 | `POST` | `/chat/audio` | 10/min | Audio chat with Whisper transcription |
 | `POST` | `/chat/image` | 10/min | Image + question chat via the vision model, bypassing RAG |
-| `GET` | `/images/{image_id}` | 120/min | Serve a persisted image (extracted from a RAG document or uploaded via chat). Unauthenticated — the 128-bit uuid4 id is the capability |
+| `GET` | `/images/{image_id}` | 120/min | Serve a persisted image (extracted from a RAG document or uploaded via chat). Unauthenticated, since the 128-bit uuid4 id is itself the capability |
 | `POST` | `/tts/generate` | 20/min | On-demand TTS generation |
 | `GET` | `/documents/list` | 30/min | List indexed documents with chunk counts (requires `x-admin-key` header) |
 | `POST` | `/documents/upload` | 2/min | Upload and index a document (requires `x-admin-key` header) |
-| `DELETE` | `/documents/{filename}` | — | Delete a document, its linked images, and rebuild the index (requires `x-admin-key` header) |
+| `DELETE` | `/documents/{filename}` | none | Delete a document, its linked images, and rebuild the index (requires `x-admin-key` header) |
 | `GET` | `/documents/chunks` | 30/min | Fetch chunks for a document, with optional query ranking (requires `x-admin-key` header) |
 | `POST` | `/documents/refresh` | 5/min | Rebuild the vector store from the local documents folder (requires `x-admin-key` header) |
 | `POST` | `/feedback` | 30/min | Submit feedback on a response |
@@ -40,7 +40,7 @@ Every chat route requires a `session_id`, and it must match `session_<uuid4>`:
 session_3f8a1c92-5d7e-4b21-9f03-6c8e4a1d7b25
 ```
 
-There is **no default** — omitting it is a `422`, and any other shape (including the
+There is **no default.** Omitting it is a `422`, and any other shape (including the
 old `"default"` sentinel) is a `400`. The reason is that `session_id` doubles as the
 bearer capability for `GET /conversations`: that route has no separate auth, so the
 id has to be unguessable, and a value multiple clients could land on would put
@@ -58,7 +58,7 @@ would record it verbatim.
 
 Model output is sanitized before it reaches the client. Citation markers (`[n]`) not
 backed by a real retrieved chunk are stripped, and inline images are allow-listed to
-`/images/{32-hex-id}` values that were actually retrieved for that turn — anything
+`/images/{32-hex-id}` values that were actually retrieved for that turn. Anything
 else, including external URLs, is removed rather than rendered. On streamed responses
 this happens incrementally, so a partial marker is held back rather than flashing on
 screen before cleanup. The web client re-validates both independently, and the
