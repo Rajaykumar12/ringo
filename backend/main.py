@@ -48,7 +48,7 @@ def _eval_and_update(log_id: str, partition_key: str, query: str, context: str, 
     update_eval_scores(log_id, partition_key, scores)
 
 MAX_MESSAGE_LENGTH = int(os.environ.get("MAX_MESSAGE_LENGTH", 1000))
-MAX_TTS_LENGTH = int(os.environ.get("MAX_TTS_LENGTH", 5000))
+MAX_TTS_LENGTH = int(os.environ.get("MAX_TTS_LENGTH", 1500))
 MAX_AUDIO_SIZE_MB = int(os.environ.get("MAX_AUDIO_SIZE_MB", 10))
 MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", 8))
 MAX_SESSION_ID_LENGTH = 128
@@ -646,8 +646,12 @@ async def generate_tts(
     if len(text) > MAX_TTS_LENGTH:
         raise HTTPException(status_code=413, detail=f"Text too long (max {MAX_TTS_LENGTH} characters)")
     try:
-        retrieval_result = {"response": text}
-        audio_data = pipeline.response_generator.generate_audio(retrieval_result)
+        # to_thread: generate_audio() is blocking (edge-tts + tempfile I/O) and was
+        # being awaited inline on the event loop, so one slow synthesis stalled every
+        # other request on the worker, health probes included.
+        audio_data = await asyncio.to_thread(
+            pipeline.response_generator.generate_audio, {"response": text}
+        )
         return JSONResponse(content={
             "success": True,
             "audio_data": audio_data,
