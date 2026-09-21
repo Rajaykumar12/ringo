@@ -5,6 +5,7 @@ Initializes the singleton instance and provides interface methods.
 import logging
 import os
 import re
+import threading
 from typing import Dict, Any, List, Optional, Tuple
 from langchain_core.documents import Document
 from vectorstore import LangChainRAG
@@ -20,12 +21,20 @@ RERANK_MODEL = os.environ.get("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6
 RERANK_TOP_N = int(os.environ.get("RERANK_TOP_N", "10"))
 
 
+# Double-checked locking: without it, two concurrent cold-start requests can both
+# see None and each load the ~90MB model, committing the memory twice before one
+# result is discarded.
+_cross_encoder_lock = threading.Lock()
+
+
 def _get_cross_encoder():
     global _cross_encoder
     if _cross_encoder is None:
-        from sentence_transformers import CrossEncoder
-        _cross_encoder = CrossEncoder(RERANK_MODEL)
-        logger.info("Cross-encoder re-ranker loaded: %s", RERANK_MODEL)
+        with _cross_encoder_lock:
+            if _cross_encoder is None:
+                from sentence_transformers import CrossEncoder
+                _cross_encoder = CrossEncoder(RERANK_MODEL)
+                logger.info("Cross-encoder re-ranker loaded: %s", RERANK_MODEL)
     return _cross_encoder
 
 

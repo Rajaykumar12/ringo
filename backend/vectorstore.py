@@ -161,6 +161,33 @@ class LangChainRAG:
 
         self._try_load_existing_vectorstore()
 
+    # get_retriever() used to rebuild the EnsembleRetriever + as_retriever wrapper on
+    # every single request. They're stateless wrappers, so cache one — but a stale
+    # retriever after a reindex would be a correctness bug, not just a perf win, so
+    # the two fields it's derived from invalidate it automatically on assignment
+    # rather than relying on every reindex path remembering to clear it.
+    _retriever = None
+    _vectorstore = None
+    _bm25_retriever = None
+
+    @property
+    def vectorstore(self):
+        return self._vectorstore
+
+    @vectorstore.setter
+    def vectorstore(self, value):
+        self._vectorstore = value
+        self._retriever = None
+
+    @property
+    def bm25_retriever(self):
+        return self._bm25_retriever
+
+    @bm25_retriever.setter
+    def bm25_retriever(self, value):
+        self._bm25_retriever = value
+        self._retriever = None
+
     def _try_load_existing_vectorstore(self):
         """Load existing ChromaDB index; rebuild BM25 from stored chunks."""
         chroma_index = os.path.join(CHROMA_PERSIST_DIR, "chroma.sqlite3")
@@ -876,15 +903,19 @@ Instructions:
 
     def get_retriever(self):
         """Hybrid retriever: BM25 (0.4) + semantic Chroma (0.6).
-        Falls back to semantic-only if BM25 not available."""
+        Falls back to semantic-only if BM25 not available.
+        Cached; invalidated automatically by the vectorstore/bm25_retriever setters."""
         if not self.vectorstore:
             return None
 
-        semantic = self.vectorstore.as_retriever(search_kwargs={"k": 30})
-
-        if self.bm25_retriever:
-            return EnsembleRetriever(
-                retrievers=[self.bm25_retriever, semantic],
-                weights=[0.4, 0.6],
+        if self._retriever is None:
+            semantic = self.vectorstore.as_retriever(search_kwargs={"k": 30})
+            self._retriever = (
+                EnsembleRetriever(
+                    retrievers=[self.bm25_retriever, semantic],
+                    weights=[0.4, 0.6],
+                )
+                if self.bm25_retriever
+                else semantic
             )
-        return semantic
+        return self._retriever

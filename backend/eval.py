@@ -11,11 +11,22 @@ from concurrent.futures import ThreadPoolExecutor
 logger = logging.getLogger("ringo.eval")
 
 
+_client = None
+
+
+def _get_client():
+    """Memoized like vision.py's — a fresh Groq() per _score meant three new httpx
+    connection pools and three TLS handshakes for every single evaluation."""
+    global _client
+    if _client is None:
+        from groq import Groq
+        _client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    return _client
+
+
 def _score(prompt: str) -> float | None:
     try:
-        from groq import Groq
-        client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-        resp = client.chat.completions.create(
+        resp = _get_client().chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
