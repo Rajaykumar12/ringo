@@ -10,6 +10,7 @@ concern, a periodic external job could prune rows older than some threshold.
 """
 import os
 import sqlite3
+import threading
 import time
 from contextlib import contextmanager
 from typing import Optional
@@ -20,17 +21,36 @@ DB_PATH = os.environ.get(
 
 _schema_ready = False
 
+# One SQLite connection per thread, reused across calls, instead of a fresh
+# connect/close (plus an os.makedirs) on every single operation. WAL mode lets
+# readers and the writer proceed concurrently — these stores are called from
+# asyncio.to_thread workers and BackgroundTasks at the same time, and the
+# default DELETE journal serialises them into "database is locked" under load.
+_local = threading.local()
+
+
+def _get_conn() -> sqlite3.Connection:
+    conn = getattr(_local, "conn", None)
+    if conn is not None and getattr(_local, "path", None) == DB_PATH:
+        return conn
+    if conn is not None:  # DB_PATH changed (tests/env) — rebind this thread
+        conn.close()
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")  # safe under WAL, far fewer fsyncs
+    _local.conn = conn
+    _local.path = DB_PATH
+    return conn
+
 
 @contextmanager
 def _connect():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    try:
+    """Yields this thread's connection; commits on clean exit, rolls back on error."""
+    conn = _get_conn()
+    with conn:
         yield conn
-        conn.commit()
-    finally:
-        conn.close()
 
 
 def _ensure_schema() -> None:

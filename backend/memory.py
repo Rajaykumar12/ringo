@@ -83,12 +83,14 @@ class _PersistentHistory(BaseChatMessageHistory):
     def add_messages(self, messages: Sequence[BaseMessage]) -> None:
         self._hydrate_if_empty()
         self._backing.add_messages(list(messages))
-        for m in messages:
-            role = "human" if isinstance(m, HumanMessage) else "ai"
-            try:
-                conversation_store.append_message(self.session_id, role, m.content)
-            except Exception as e:
-                logger.warning("Failed to persist message for session %s: %s", self.session_id, e)
+        rows = [
+            ("human" if isinstance(m, HumanMessage) else "ai", m.content)
+            for m in messages
+        ]
+        try:
+            conversation_store.append_messages(self.session_id, rows)
+        except Exception as e:
+            logger.warning("Failed to persist messages for session %s: %s", self.session_id, e)
 
     def clear(self) -> None:
         self._backing.clear()
