@@ -30,6 +30,14 @@ const MAX_TITLE_LENGTH = 42;
 const makeId = () => `conv_${crypto.randomUUID()}`;
 const makeSessionId = () => `session_${crypto.randomUUID()}`;
 
+// localStorage is untrusted input: a record written by an older build, a partial
+// write, or a hand-edited value can carry a missing/garbage sessionId. That used
+// to fall through to the shared "default" sentinel, which silently put unrelated
+// users on one server-side conversation. Mint a fresh token instead.
+const SESSION_ID_RE = /^session_[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const validSessionId = (v: unknown): string =>
+  typeof v === 'string' && SESSION_ID_RE.test(v) ? v : makeSessionId();
+
 function freshConversation(): Conversation {
   return { id: makeId(), sessionId: makeSessionId(), title: 'New chat', messages: [], updatedAt: Date.now() };
 }
@@ -55,6 +63,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         const parsed = JSON.parse(raw);
         const restored: Conversation[] = (parsed.conversations ?? []).map((c: any) => ({
           ...c,
+          sessionId: validSessionId(c?.sessionId),
           messages: (c.messages ?? []).map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) })),
         }));
         if (restored.length > 0) {

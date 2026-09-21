@@ -78,9 +78,19 @@ def _submit_eval(log_id: str, partition_key: str, query: str, context: str, answ
     ).add_done_callback(_log_eval_failure)
 
 
+# GET /conversations has no auth by design — the session_id IS the bearer
+# capability (see frontend use-conversations.tsx). That only holds if the value is
+# genuinely unguessable, so reject anything that isn't a client-minted UUID token.
+# In particular this rejects the old "default" sentinel, which multiple clients
+# could land on simultaneously and thereby share one server-side conversation.
+_SESSION_ID_RE = re.compile(r"^session_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
 def _validate_session_id(session_id: str) -> None:
     if len(session_id) > MAX_SESSION_ID_LENGTH:
         raise HTTPException(status_code=400, detail=f"session_id too long (max {MAX_SESSION_ID_LENGTH} chars)")
+    if not _SESSION_ID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session_id")
 
 
 def _reject_oversized_upload(request: Request, max_mb: int) -> None:
@@ -304,7 +314,7 @@ async def text_chat(
     background_tasks: BackgroundTasks,
     message: str = Form(...),
     stream: bool = Form(False),
-    session_id: str = Form("default"),
+    session_id: str = Form(...),
 ):
     # Module reference, not `from rag import rag_system`: initialize_rag() rebinds
     # rag.rag_system, which a from-import snapshot taken here would never see —
@@ -471,7 +481,7 @@ async def image_chat(
     request: Request,
     image: UploadFile = File(...),
     message: str = Form(""),
-    session_id: str = Form("default"),
+    session_id: str = Form(...),
 ):
     """Multimodal image + optional text question, answered directly by a vision-capable
     Groq model. Bypasses document retrieval — the RAG chain/prompts are plain-text only."""
@@ -537,7 +547,7 @@ async def audio_chat(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     stream: bool = Form(False),
-    session_id: str = Form("default"),
+    session_id: str = Form(...),
 ):
     _validate_session_id(session_id)
 
@@ -756,7 +766,12 @@ async def get_document_chunks(source: str, query: str = ""):
 async def get_conversation(session_id: str):
     """Recover a session's durable message history — the write-through SQLite
     copy behind memory.py's Redis/in-memory cache — so a page reload after a
-    Redis TTL expiry or a backend restart doesn't lose prior turns."""
+    Redis TTL expiry or a backend restart doesn't lose prior turns.
+
+    The session_id is a bearer capability, so it travels in a header rather than
+    the URL path: paths are written verbatim into nginx/uvicorn access logs and
+    proxy telemetry, which have broader read access and longer retention."""
+    session_id = x_session_id
     _validate_session_id(session_id)
     from conversation_store import get_messages
     try:

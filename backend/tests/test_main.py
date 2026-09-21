@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from unittest.mock import patch
 
 import pytest
@@ -13,8 +14,27 @@ def test_validate_session_id_rejects_too_long():
     assert exc_info.value.status_code == 400
 
 
-def test_validate_session_id_accepts_normal_length():
-    main._validate_session_id("normal_session_id")  # should not raise
+def test_validate_session_id_accepts_minted_token():
+    main._validate_session_id(f"session_{uuid.uuid4()}")  # should not raise
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "default",              # the old shared sentinel — must never be accepted
+        "normal_session_id",    # arbitrary caller-chosen string
+        "session_not-a-uuid",
+        "session_",
+        "",
+        f"session_{uuid.uuid4()}x",
+    ],
+)
+def test_validate_session_id_rejects_guessable_values(bad):
+    """session_id is the bearer capability for GET /conversations, so anything a
+    caller could guess or collide on has to be refused."""
+    with pytest.raises(HTTPException) as exc_info:
+        main._validate_session_id(bad)
+    assert exc_info.value.status_code == 400
 
 
 def test_log_id_regex_accepts_uuid_like_string():

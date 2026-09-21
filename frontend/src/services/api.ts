@@ -83,7 +83,7 @@ export interface AudioChatResponse {
 export const sendTextMessage = async (
   message: string,
   stream: boolean = false,
-  session_id: string = 'default',
+  session_id: string,
   signal?: AbortSignal
 ): Promise<ChatResponse> => {
   const formData = new FormData();
@@ -98,7 +98,7 @@ export const sendTextMessage = async (
 export const sendTextMessageStream = async (
   message: string,
   onChunk: (chunk: { type: string; value: string; sources?: SourceCitation[]; images?: string[] }) => void,
-  session_id: string = 'default',
+  session_id: string,
   signal?: AbortSignal
 ): Promise<void> => {
   const formData = new FormData();
@@ -149,7 +149,7 @@ export const sendTextMessageStream = async (
 export const sendAudioMessage = async (
   audioUri: string,
   stream: boolean = false,
-  session_id: string = 'default'
+  session_id: string
 ): Promise<AudioChatResponse> => {
   const formData = new FormData();
 
@@ -183,7 +183,7 @@ export const sendImageMessage = async (
   imageUri: string,
   message: string,
   mimeType: string = 'image/jpeg',
-  session_id: string = 'default',
+  session_id: string,
   signal?: AbortSignal
 ): Promise<ImageChatResponse> => {
   const formData = new FormData();

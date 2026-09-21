@@ -29,8 +29,12 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const useStreaming = streamingEnabled;
 
-  // Session ID ties requests to the active conversation's backend-side memory.
-  const sessionId = activeConversation?.sessionId ?? 'default';
+  // Session ID ties requests to the active conversation's backend-side memory, and
+  // doubles as the bearer capability for server-side history recovery. There is
+  // deliberately no fallback sentinel: before hydration completes there is no
+  // session to speak of, and a shared constant would put unrelated users on one
+  // server-side conversation. Sends are gated on this being non-null instead.
+  const sessionId = activeConversation?.sessionId ?? null;
 
   const [showDocuments, setShowDocuments] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -176,6 +180,10 @@ export default function ChatPage() {
     text: string,
     options?: { skipUserMessage?: boolean; image?: AttachedImage }
   ) => {
+    // No active conversation yet (pre-hydration) — there is no session capability
+    // to send under, and inventing one would strand the turn in a session the
+    // conversation never adopts.
+    if (!sessionId) return;
     if (!options?.skipUserMessage) {
       const userMessage: Message = {
         id: Date.now().toString(),
@@ -372,6 +380,7 @@ export default function ChatPage() {
   const stopRecordingAndSend = async () => {
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
+    if (!sessionId) return;
 
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
