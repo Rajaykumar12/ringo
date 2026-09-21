@@ -3,8 +3,13 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    # Deliberately not published to the host. Only the backend talks to Redis, and
+    # it does so over app-network. Publishing it broke `docker compose up` for
+    # anyone already running Redis locally ("address already in use"), and bound an
+    # unauthenticated Redis to 0.0.0.0, which is a well-known scan target.
+    # To inspect it during development: docker compose exec redis redis-cli
+    expose:
+      - "6379"
     networks:
       - app-network
     restart: unless-stopped
