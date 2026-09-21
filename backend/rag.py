@@ -242,6 +242,13 @@ def _sanitize_citations(response: str, valid_indices: set) -> str:
 # sometimes "prettifies" the id into a fake filename (e.g. figure-9-2.png), which this
 # needs to catch and strip too, not just malformed-but-hex-shaped ids.
 _IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(/images/([^)]+)\)")
+# Deliberately matches ANY markdown image target, not just /images/ ones. The
+# sanitizer below is an allow-list: anything that isn't an advertised local image
+# id gets dropped. Scoping this pattern to /images/ would mean an external target
+# (e.g. an attacker-controlled https:// URL emitted via prompt injection in an
+# indexed document) never matches at all, and so silently survives sanitization
+# and gets auto-loaded by the browser as an exfiltration beacon.
+_ANY_IMAGE_MD_RE = re.compile(r"!\[[^\]]*\]\(([^)]*)\)")
 _VALID_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 
 
@@ -251,10 +258,13 @@ def _sanitize_and_filter_images(response: str, images: List[str], valid_ids: set
     hex ids), then drop already-inlined ids from the fallback `images` list to avoid dupes."""
 
     def _strip_invalid(m: "re.Match") -> str:
-        img_id = m.group(1)
+        target = m.group(1).strip()
+        if not target.startswith("/images/"):
+            return ""  # external origin, data:, or relative — never renderable here
+        img_id = target[len("/images/"):]
         return m.group(0) if _VALID_ID_RE.match(img_id) and img_id in valid_ids else ""
 
-    clean_response = _IMAGE_MD_RE.sub(_strip_invalid, response)
+    clean_response = _ANY_IMAGE_MD_RE.sub(_strip_invalid, response)
     used_ids = set(_IMAGE_MD_RE.findall(clean_response))
     filtered_images = [img for img in images if img.rsplit("/", 1)[-1] not in used_ids]
     return clean_response, filtered_images

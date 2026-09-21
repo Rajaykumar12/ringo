@@ -6,10 +6,18 @@ import { useThemeColors } from '@/hooks/use-theme-colors';
 import { StreamingLiveRegion } from '@/components/streaming-live-region';
 import styles from './chat-messages.module.css';
 
+// Only backend-served image ids render. The `a` override below already refuses
+// non-http(s) hrefs; without the same guard here an LLM-emitted external image
+// (e.g. injected via a poisoned document) would be auto-loaded by the browser,
+// leaking the viewer's IP/UA and any context smuggled into the query string.
+// rag.py's _sanitize_and_filter_images strips these server-side too — this is
+// the second layer, and the CSP img-src directive is the third.
+const LOCAL_IMAGE_RE = /^\/images\/[0-9a-f]{32}$/;
+
 const MarkdownImage = (
   { src, alt, onOpen }: { src?: string; alt?: string; onOpen: (src: string) => void }
 ) => {
-  if (!src) return null;
+  if (!src || !LOCAL_IMAGE_RE.test(src)) return null;
   const resolved = toImageUrl(src);
   return (
     <img

