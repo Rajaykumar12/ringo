@@ -50,18 +50,24 @@ def save_image(data: bytes, mime_type: Optional[str] = None) -> str:
     return image_id
 
 
+# The id never carries its extension, so the file has to be located by stem. The
+# set of extensions save_image() can ever produce is closed (_EXT_BY_MIME above),
+# so probe those directly rather than listing the directory: /images/{id} is an
+# unauthenticated hot path and image_links.py documents that files are never
+# pruned, so an os.listdir() here was O(total images) on every single request.
+_KNOWN_EXTS = (".png", ".jpg", ".webp", ".gif", ".bmp")
+
+
 def _resolve_path(image_id: str) -> Optional[str]:
     """Validate image_id is a bare hex uuid (no path separators) and locate its file
     on disk regardless of extension. Returns None if invalid or missing — callers
     MUST treat None as not-found, never fall back to raw path construction (traversal guard)."""
     if not image_id or len(image_id) != 32 or not all(c in "0123456789abcdef" for c in image_id):
         return None
-    if not os.path.isdir(IMAGES_DIR):
-        return None
-    for fname in os.listdir(IMAGES_DIR):
-        stem, _ = os.path.splitext(fname)
-        if stem == image_id:
-            return os.path.join(IMAGES_DIR, fname)
+    for ext in _KNOWN_EXTS:
+        candidate = os.path.join(IMAGES_DIR, f"{image_id}{ext}")
+        if os.path.isfile(candidate):
+            return candidate
     return None
 
 
