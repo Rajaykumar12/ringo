@@ -657,7 +657,8 @@ MAX_DOCUMENT_SIZE_MB = int(os.environ.get("MAX_DOCUMENT_SIZE_MB", 20))
 
 
 @app.get("/documents/list")
-async def list_documents():
+@limiter.limit("30/minute")
+async def list_documents(request: Request, _: None = Depends(_require_admin_key)):
     from rag import rag_system
     if not rag_system or not rag_system.vectorstore:
         return JSONResponse(content={"documents": []})
@@ -727,9 +728,17 @@ async def delete_doc(filename: str, _: None = Depends(_require_admin_key)):
 
 
 @app.get("/documents/chunks")
-async def get_document_chunks(source: str, query: str = ""):
+@limiter.limit("30/minute")
+async def get_document_chunks(
+    request: Request, source: str, query: str = "", _: None = Depends(_require_admin_key)
+):
+    # Upload/delete/refresh on this resource were already admin-gated; these read
+    # routes were not, which left the indexed corpus fully readable (and, with no
+    # rate limit, bulk-extractable via `query` permutations) by any caller.
     if len(source) > 256:
         raise HTTPException(status_code=400, detail="source parameter too long")
+    if len(query) > 256:
+        raise HTTPException(status_code=400, detail="query parameter too long")
     from rag import rag_system
     if not rag_system or not rag_system.vectorstore:
         raise HTTPException(status_code=503, detail="Vector store not initialized")
@@ -766,12 +775,7 @@ async def get_document_chunks(source: str, query: str = ""):
 async def get_conversation(session_id: str):
     """Recover a session's durable message history — the write-through SQLite
     copy behind memory.py's Redis/in-memory cache — so a page reload after a
-    Redis TTL expiry or a backend restart doesn't lose prior turns.
-
-    The session_id is a bearer capability, so it travels in a header rather than
-    the URL path: paths are written verbatim into nginx/uvicorn access logs and
-    proxy telemetry, which have broader read access and longer retention."""
-    session_id = x_session_id
+    Redis TTL expiry or a backend restart doesn't lose prior turns."""
     _validate_session_id(session_id)
     from conversation_store import get_messages
     try:

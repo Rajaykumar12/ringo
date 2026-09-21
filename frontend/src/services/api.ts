@@ -213,8 +213,10 @@ export interface DocumentInfo {
   type: string;
 }
 
-export const listDocuments = async (): Promise<DocumentInfo[]> => {
-  const response = await api.get('/documents/list');
+export const listDocuments = async (adminKey: string): Promise<DocumentInfo[]> => {
+  const response = await api.get('/documents/list', {
+    headers: { 'x-admin-key': adminKey },
+  });
   return response.data.documents;
 };
 

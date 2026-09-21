@@ -60,15 +60,19 @@ export function DocumentsPanel({ visible, onClose }: DocumentsPanelProps) {
     setLoading(true);
     setError(null);
     try {
-      setDocuments(await listDocuments());
+      setDocuments(await listDocuments(adminKey));
     } catch {
       setError('Failed to load documents.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [adminKey]);
 
-  useEffect(() => { if (visible) fetchDocuments(); }, [visible, fetchDocuments]);
+  // Listing is admin-gated too (it enumerates the corpus), so wait for the stored
+  // key to hydrate before the first fetch, or it would fire with an empty key.
+  useEffect(() => {
+    if (visible && adminKeyLoaded) fetchDocuments();
+  }, [visible, adminKeyLoaded, fetchDocuments]);
 
   const handlePick = () => {
     fileInputRef.current?.click();
