@@ -41,10 +41,10 @@ Fully self-hostable: no cloud vendor lock-in — documents, images, and analytic
 - **Image Chat** — Upload an image directly for vision-model Q&A; follow-up text messages that reference "that image/picture/photo" are automatically routed back to the vision model using the session's last upload
 - **LaTeX Normalization** — Regex-based math notation conversion before embedding
 - **Model Tiering** — Short, simple, or early-conversation queries are automatically routed to a faster Groq model; longer or structural queries use the full model
-- **Response Caching** — Exact-match Redis cache for first-turn queries, avoiding redundant LLM calls
+- **Response Caching** — Exact-match Redis cache for first-turn queries, avoiding redundant LLM calls. Applies to both streaming and non-streaming chat, which share one retrieval path (`rag.prepare_context`)
 - **Streaming Toggle** — Switch between SSE token-by-token streaming and standard responses
 - **Document Management** — Upload, list, and delete documents via API; persisted to a local folder (Docker volume in production). Upload/delete/refresh require the `x-admin-key` header (`ADMIN_API_KEY`) — the Documents panel in the UI prompts for it
-- **Conversation Memory** — Redis-backed session history with in-memory fallback, write-through persisted to SQLite (`conversation_store.py`) so a page reload after a Redis TTL expiry or backend restart doesn't lose prior turns; recoverable via `GET /conversations/{session_id}`
+- **Conversation Memory** — Redis-backed session history with in-memory fallback, write-through persisted to SQLite (`conversation_store.py`) so a page reload after a Redis TTL expiry or backend restart doesn't lose prior turns; recoverable via `GET /conversations` (session id in the `x-session-id` header)
 - **On-Demand TTS** — Voice generation via `edge-tts` with playback controls
 - **Rate Limiting** — Per-endpoint limits via `slowapi` (see [API Endpoints](#api-endpoints))
 - **Analytics** — Query, response, sources, latency, and model tier logged to a local SQLite store, readable from the admin dashboard
@@ -57,7 +57,7 @@ Fully self-hostable: no cloud vendor lock-in — documents, images, and analytic
 
 1. **Input Processing** — text preprocessing / Whisper audio transcription / direct image input
 2. **Query Refinement** — query formatting, LLM-generated query rewriting to widen retrieval recall, model-tier selection (fast vs. default Groq model)
-3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search (original query + rewrites), cross-encoder reranking, structure-chunk injection for structural queries; deduplication, citation-numbered metadata-enriched context assembly
+3. **RAG Retrieval** — Hybrid BM25 + ChromaDB search (original query + rewrites, retrieved in parallel), cross-encoder reranking, structure-chunk injection for structural queries; deduplication, citation-numbered metadata-enriched context assembly
 4. **Response Generation** — Groq LLM (tiered) via LCEL chain with session history, backed by a first-turn exact-match response cache; response is sanitized to strip hallucinated `[n]` citations/image markers (validated incrementally as it streams) and flagged with a groundedness caveat if no context was retrieved
 
 ### RAG Document Pipeline
@@ -116,7 +116,7 @@ npm install
 npm run dev
 ```
 
-Set `ADMIN_API_KEY` if you want to use the Documents panel (upload/delete/refresh) or the Admin dashboard — both are gated behind it. Without it, those routes return `503` and the corresponding UI prompts for a key that will never validate.
+Set `ADMIN_API_KEY` if you want to use the Documents panel or the Admin dashboard — both are gated behind it. This covers **browsing** the corpus as well as mutating it (`/documents/list` and `/documents/chunks` expose indexed document text, so they are gated alongside upload/delete/refresh). Without it, those routes return `503` and the corresponding UI prompts for a key that will never validate.
 
 ### System dependencies (for OCR)
 
@@ -141,11 +141,11 @@ OCR is optional — the system falls back gracefully if Tesseract is not install
 | `REDIS_URL` | No | `redis://localhost:6379` | Session memory and response cache (falls back to in-memory) |
 | `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins — set to your frontend's deployed origin(s) |
 | `ALLOWED_ORIGIN_REGEX` | No | — | Regex alternative/addition to `ALLOWED_ORIGINS` |
-| `ADMIN_API_KEY` | No | — | Enables `/admin/*` routes and the document-management routes (`x-admin-key` header); if unset, `/admin/*` returns `503` rather than failing startup |
+| `ADMIN_API_KEY` | No | — | Enables `/admin/*` and **all** `/documents/*` routes, reads included (`x-admin-key` header); if unset, those routes return `503` rather than failing startup |
 | `LOCAL_LOGS_DB_PATH` | No | `backend/data/rag_logs.db` | Where analytics are stored (SQLite) |
 | `IMAGES_DIR` | No | `backend/data/images/` | Where persisted images (from RAG documents and chat uploads) are stored |
 | `IMAGE_LINKS_DB_PATH` | No | `backend/data/image_links.db` | SQLite DB linking uploaded images to sessions (powers "that image" follow-ups) |
-| `CONVERSATIONS_DB_PATH` | No | `backend/data/conversations.db` | SQLite write-through store backing `/conversations/{session_id}`, so history survives a Redis TTL expiry or backend restart |
+| `CONVERSATIONS_DB_PATH` | No | `backend/data/conversations.db` | SQLite write-through store backing `GET /conversations`, so history survives a Redis TTL expiry or backend restart |
 | `RERANK_MODEL` | No | `cross-encoder/ms-marco-MiniLM-L-6-v2` | Cross-encoder used to rerank hybrid retrieval results |
 | `RERANK_TOP_N` | No | `10` | Number of chunks kept after reranking |
 | `ENABLE_QUERY_REWRITE` | No | `true` | Generates alternate query phrasings before retrieval to widen recall; costs one extra fast-tier Groq call per non-trivial query |
@@ -157,7 +157,8 @@ OCR is optional — the system falls back gracefully if Tesseract is not install
 | `MAX_DOCUMENT_SIZE_MB` | No | `20` | Max document upload size |
 | `MAX_UPLOAD_BYTES` | No | 20MB | Byte-level cap enforced in `document_store.py`, alongside `MAX_DOCUMENT_SIZE_MB` |
 | `MAX_IMAGE_SIZE_MB` | No | `8` | Max image upload size for `/chat/image` |
-| `MAX_TTS_LENGTH` | No | `5000` | Max characters accepted by `/tts/generate` |
+| `MAX_TTS_LENGTH` | No | `1500` | Max characters accepted by `/tts/generate` |
+| `TRUSTED_PROXY_IPS` | No | — | Comma-separated IPs of reverse proxies allowed to set `X-Forwarded-For`. **Required behind a proxy** — otherwise rate limiting keys every request on the proxy's own address, so all clients share one bucket and a single caller throttles everyone. Only these peers are trusted, so the header can't be spoofed by direct callers. Also enables uvicorn's `--proxy-headers`/`--forwarded-allow-ips` |
 | `LOG_LEVEL` | No | `INFO` | Backend log level |
 
 Frontend build-time variable: `VITE_API_URL` — set to your backend's URL (`frontend/.env.local` for dev, or as a Docker build arg).
@@ -175,7 +176,7 @@ ringo/
 │   ├── vectorstore.py       # PDF/PPTX/DOCX/HTML/CSV/XLSX loaders, OCR, image extraction, chunking, BM25+semantic hybrid retrieval
 │   ├── latex_utils.py       # LaTeX/math notation normalization
 │   ├── memory.py            # Redis / in-memory conversation history
-│   ├── conversation_store.py # SQLite write-through store backing GET /conversations/{session_id}
+│   ├── conversation_store.py # SQLite write-through store backing GET /conversations
 │   ├── document_store.py    # Local filesystem document storage (upload/delete)
 │   ├── image_store.py       # Local filesystem image storage (data/images/)
 │   ├── image_links.py       # SQLite session→image linking, powers image follow-ups
@@ -196,8 +197,10 @@ ringo/
 │   │   ├── hooks/           # settings, conversations, network status, theme
 │   │   ├── services/api.ts  # API client with SSE streaming, document, and image endpoints
 │   │   └── theme.css        # Design tokens as CSS custom properties
+│   ├── nginx.conf           # Production server: CSP + security headers, SPA fallback
 │   └── vite.config.ts
 │
+├── .github/workflows/ci.yml # Tests, dependency CVE audit, lint, build
 └── docker-compose.yml
 ```
 
@@ -213,17 +216,47 @@ ringo/
 | `POST` | `/chat/text` | 10/min | Text chat (supports `stream=true`); auto-routes to vision model on image follow-up references |
 | `POST` | `/chat/audio` | 10/min | Audio chat with Whisper transcription |
 | `POST` | `/chat/image` | 10/min | Image + question chat via the vision model, bypassing RAG |
-| `GET` | `/images/{image_id}` | — | Serve a persisted image (extracted from a RAG document or uploaded via chat) |
+| `GET` | `/images/{image_id}` | 120/min | Serve a persisted image (extracted from a RAG document or uploaded via chat). Unauthenticated — the 128-bit uuid4 id is the capability |
 | `POST` | `/tts/generate` | 20/min | On-demand TTS generation |
-| `GET` | `/documents/list` | — | List indexed documents with chunk counts |
+| `GET` | `/documents/list` | 30/min | List indexed documents with chunk counts (requires `x-admin-key` header) |
 | `POST` | `/documents/upload` | 2/min | Upload and index a document (requires `x-admin-key` header) |
 | `DELETE` | `/documents/{filename}` | — | Delete a document, its linked images, and rebuild the index (requires `x-admin-key` header) |
-| `GET` | `/documents/chunks` | — | Fetch chunks for a document (with optional query ranking) |
+| `GET` | `/documents/chunks` | 30/min | Fetch chunks for a document, with optional query ranking (requires `x-admin-key` header) |
 | `POST` | `/documents/refresh` | 5/min | Rebuild the vector store from the local documents folder (requires `x-admin-key` header) |
 | `POST` | `/feedback` | 30/min | Submit feedback on a response |
-| `GET` | `/conversations/{session_id}` | — | Recover a session's durable message history from the SQLite write-through store |
+| `GET` | `/conversations` | 60/min | Recover a session's durable message history from the SQLite write-through store. Takes the session id in an `x-session-id` **header**, not the path |
 | `GET` | `/admin/stats` | 20/min | Aggregate analytics (requires `x-admin-key` header) |
 | `GET` | `/admin/logs` | 20/min | Recent query logs (requires `x-admin-key` header) |
+
+### Session IDs
+
+Every chat route requires a `session_id`, and it must match `session_<uuid4>`:
+
+```
+session_3f8a1c92-5d7e-4b21-9f03-6c8e4a1d7b25
+```
+
+There is **no default** — omitting it is a `422`, and any other shape (including the
+old `"default"` sentinel) is a `400`. The reason is that `session_id` doubles as the
+bearer capability for `GET /conversations`: that route has no separate auth, so the
+id has to be unguessable, and a value multiple clients could land on would put
+unrelated users on one shared server-side conversation. The web client mints ids
+with `crypto.randomUUID()` and re-mints any malformed value it reads back from
+`localStorage`.
+
+Because it is a credential, it travels in the `x-session-id` **header** on
+`GET /conversations` rather than in the URL path, where proxies and access logs
+would record it verbatim.
+
+### Response integrity
+
+Model output is sanitized before it reaches the client. Citation markers (`[n]`) not
+backed by a real retrieved chunk are stripped, and inline images are allow-listed to
+`/images/{32-hex-id}` values that were actually retrieved for that turn — anything
+else, including external URLs, is removed rather than rendered. On streamed responses
+this happens incrementally, so a partial marker is held back rather than flashing on
+screen before cleanup. The web client re-validates both independently, and the
+production CSP restricts `img-src` to the API origin.
 
 ---
 
@@ -237,10 +270,40 @@ docker compose up --build -d
 
 - **Documents** — stored under `backend/documents/`, bind-mounted as a volume so uploads survive container restarts
 - **Vector store** — `backend/chroma_db/`, also volume-mounted
-- **Analytics & images** — local SQLite files and persisted images under `backend/data/` (`rag_logs.db`, `image_links.db`, `images/`). This directory is **not** currently volume-mounted in `docker-compose.yml`, so it will not survive container recreation as shipped — mount it alongside `documents/` and `chroma_db/` for production use, or point `LOCAL_LOGS_DB_PATH`/`IMAGES_DIR`/`IMAGE_LINKS_DB_PATH` at a mounted volume
+- **Analytics, conversations & images** — SQLite files and persisted images under `backend/data/` (`rag_logs.db`, `conversations.db`, `image_links.db`, `images/`), volume-mounted alongside the others. Without this mount the write-through conversation store loses its durability the moment the container is recreated
 - **Sessions** — Redis (bundled in `docker-compose.yml`), or an in-memory fallback if unavailable
 
-For a production deployment behind a real domain, set `ALLOWED_ORIGINS`/`ALLOWED_ORIGIN_REGEX` on the backend to your frontend's origin, and build the frontend with `VITE_API_URL` pointing at your backend (e.g. `docker build --build-arg VITE_API_URL=https://api.yourdomain.com ./frontend`). Put both containers behind a reverse proxy (nginx/Caddy/Traefik) for TLS.
+The SQLite stores run in WAL mode with one connection per thread, so concurrent request handlers and background tasks don't serialise into `database is locked`.
+
+### Production checklist
+
+1. **CORS** — set `ALLOWED_ORIGINS` (or `ALLOWED_ORIGIN_REGEX`) to your frontend's origin. Note `allow_credentials=True` is on, so an overly broad regex is dangerous; the backend logs a warning if it detects one.
+2. **Frontend build** — `docker build --build-arg VITE_API_URL=https://api.yourdomain.com ./frontend`. This value is also substituted into the CSP `connect-src`/`img-src` in `frontend/nginx.conf` at build time, so a mismatch will block API calls in the browser.
+3. **Reverse proxy** — put both containers behind nginx/Caddy/Traefik for TLS, then **set `TRUSTED_PROXY_IPS`** to that proxy's address. Skipping this silently degrades rate limiting to a single shared bucket for all clients.
+4. **Admin key** — set `ADMIN_API_KEY`. All `/documents/*` and `/admin/*` routes return `503` until it is.
+
+The frontend container serves on **port 8080** (nginx runs unprivileged and cannot bind `:80`); `docker-compose.yml` maps it to `8081` on the host. `frontend/nginx.conf` also sets `Content-Security-Policy`, `X-Frame-Options`, `X-Content-Type-Options` and `Referrer-Policy`, and provides the SPA fallback that react-router deep links need.
+
+---
+
+## Development
+
+```bash
+cd backend && pytest          # backend suite
+cd frontend && npm run lint   # eslint
+cd frontend && npm run build  # tsc -b + vite build
+```
+
+`.github/workflows/ci.yml` runs all of the above on push and pull request, plus a
+dependency CVE audit (`pip-audit` for Python, `npm audit` for the frontend). The
+Python audit carries `--ignore-vuln` entries for a small set of chromadb advisories
+that have **no fixed version published upstream** — without them the step could never
+pass, and a step that always fails gets ignored. Re-check those IDs whenever chromadb
+is bumped and drop any that have gained a fix.
+
+Pillow is pinned ahead of its transitive floor deliberately: it parses attacker-supplied
+bytes on the unauthenticated `/chat/image` route and during OCR of images embedded in
+uploaded documents, making it the most exposed parser in the stack.
 
 ---
 
