@@ -70,9 +70,11 @@ backend/data
 CAPABILITY_EXPANSION.md
 ROADMAP.md
 AUDIT_REPORT.md
-# Added by code-review-graph
-.code-review-graph/
+# Added by graphify
+graphify-out/cost.json
 
 # Claude Code local tool config (machine-specific paths, local settings)
 .claude/
 .mcp.json
+
+graphify-out/
