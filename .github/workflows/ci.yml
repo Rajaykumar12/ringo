@@ -17,24 +17,27 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install dependencies
         run: |
-          # The runner's bundled pip/setuptools carry their own advisories and would
-          # fail the audit below on toolchain rather than app dependencies.
-          pip install --upgrade pip setuptools
+          # pip upgrades cleanly; setuptools deliberately does not — see the audit step.
+          pip install --upgrade pip
           pip install -r backend/requirements.txt
       - name: Audit dependencies for known CVEs
         run: |
           pip install pip-audit
           # Audits the resolved environment, so transitive packages are covered too.
-          # The --ignore-vuln entries are chromadb advisories with NO fixed version
-          # published upstream: without them this step can never pass, and a step
-          # that always fails gets muted, which is worse than a narrow documented
-          # exception. Re-check these whenever chromadb is bumped and drop any that
-          # have gained a fix.
+          # Two documented exceptions, both unfixable rather than unimportant — a step
+          # that always fails gets muted, which is worse than a narrow exception:
+          #   PYSEC-2026-311/3813/3814/3815 — chromadb, no fixed version published
+          #     upstream. Re-check on every chromadb bump and drop any that gain a fix.
+          #   PYSEC-2026-3447 — setuptools, fixed in 83.0.0, but torch pins
+          #     setuptools<82, so no torch-compatible release carries the fix. It is
+          #     build tooling rather than request-path code. Drop this when torch
+          #     relaxes that pin.
           pip-audit \
             --ignore-vuln PYSEC-2026-311 \
             --ignore-vuln PYSEC-2026-3813 \
             --ignore-vuln PYSEC-2026-3814 \
-            --ignore-vuln PYSEC-2026-3815
+            --ignore-vuln PYSEC-2026-3815 \
+            --ignore-vuln PYSEC-2026-3447
       - name: Run tests
         working-directory: backend
         env:

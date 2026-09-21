@@ -295,15 +295,30 @@ cd frontend && npm run build  # tsc -b + vite build
 ```
 
 `.github/workflows/ci.yml` runs all of the above on push and pull request, plus a
-dependency CVE audit (`pip-audit` for Python, `npm audit` for the frontend). The
-Python audit carries `--ignore-vuln` entries for a small set of chromadb advisories
-that have **no fixed version published upstream** — without them the step could never
-pass, and a step that always fails gets ignored. Re-check those IDs whenever chromadb
-is bumped and drop any that have gained a fix.
+dependency CVE audit (`pip-audit` for Python, `npm audit` for the frontend).
 
 Pillow is pinned ahead of its transitive floor deliberately: it parses attacker-supplied
 bytes on the unauthenticated `/chat/image` route and during OCR of images embedded in
-uploaded documents, making it the most exposed parser in the stack.
+uploaded documents, making it the most exposed parser in the stack. `aiohttp`, `anyio`
+and `cryptography` carry `>=` security floors for the same reason — they're transitive,
+but the versions upstream would otherwise resolve to have open advisories.
+
+### Known audit exceptions
+
+The Python audit carries `--ignore-vuln` entries. Both are **unfixable, not unimportant** —
+a step that always fails gets muted, which is worse than a narrow, documented exception:
+
+| Advisory | Package | Why it can't be fixed |
+|---|---|---|
+| `PYSEC-2026-311`, `-3813`, `-3814`, `-3815` | chromadb | No fixed version published upstream. Re-check on every chromadb bump. |
+| `PYSEC-2026-3447` | setuptools | Fixed in 83.0.0, but `torch` pins `setuptools<82`, so no torch-compatible release carries the fix. Build tooling, not request-path code. Drop when torch relaxes the pin. |
+
+`npm audit` gates at `--audit-level=high`, so two **moderate** react-router advisories
+are reported without failing the build. Fixing them requires react-router-dom v7, a
+breaking major upgrade. Neither is reachable in this app as written: every `navigate()`
+call targets a hardcoded literal (no user-controlled redirect target), and the second
+advisory applies only to SSR hydration, which a Vite SPA does not use. Worth scheduling
+the v7 migration, not worth an emergency.
 
 ---
 
