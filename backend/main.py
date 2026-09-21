@@ -771,11 +771,17 @@ async def get_document_chunks(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@app.get("/conversations/{session_id}")
-async def get_conversation(session_id: str):
+@app.get("/conversations")
+@limiter.limit("60/minute")
+async def get_conversation(request: Request, x_session_id: str = Header(...)):
     """Recover a session's durable message history — the write-through SQLite
     copy behind memory.py's Redis/in-memory cache — so a page reload after a
-    Redis TTL expiry or a backend restart doesn't lose prior turns."""
+    Redis TTL expiry or a backend restart doesn't lose prior turns.
+
+    The session_id is a bearer capability, so it travels in a header rather than
+    the URL path: paths are written verbatim into nginx/uvicorn access logs and
+    proxy telemetry, which have broader read access and longer retention."""
+    session_id = x_session_id
     _validate_session_id(session_id)
     from conversation_store import get_messages
     try:

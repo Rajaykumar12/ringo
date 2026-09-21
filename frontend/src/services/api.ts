@@ -265,7 +265,21 @@ export const getDocumentChunks = async (
 ): Promise<{ source: string; chunks: DocumentChunk[] }> => {
   const params = new URLSearchParams({ source });
   if (query) params.append('query', query);
-  const response = await api.get(`/documents/chunks?${params.toString()}`);
+  const response = await api.get(`/documents/chunks?${params.toString()}`, {
+    headers: { 'x-admin-key': adminKey },
+  });
+  return response.data;
+};
+
+// Durable server-side history recovery. The sessionId is a bearer capability, so
+// it goes in a header rather than the URL path — paths land verbatim in access
+// logs and proxy telemetry.
+export const getConversation = async (
+  sessionId: string
+): Promise<{ session_id: string; messages: { role: string; content: string; timestamp: string }[] }> => {
+  const response = await api.get('/conversations', {
+    headers: { 'x-session-id': sessionId },
+  });
   return response.data;
 };
 
