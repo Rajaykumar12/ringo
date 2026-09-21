@@ -2,21 +2,22 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y ffmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
 
 COPY . .
 
-# Documents folder is normally bind-mounted as a volume at runtime (see docker-compose.yml)
-RUN mkdir -p /app/documents
+# Source stays root-owned and read-only to the runtime user: a write primitive in
+# the app should not become persistent code execution. Only the directories the
+# app genuinely writes to are handed over.
+RUN mkdir -p /app/documents /app/chroma_db /app/data /app/embedding_cache \
+    && chown -R appuser:appuser /app/documents /app/chroma_db /app/data /app/embedding_cache
 
-# Ensure chroma_db directory exists for volume mount
-RUN mkdir -p /app/chroma_db
-
-RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser \
-    && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

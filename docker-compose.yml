@@ -27,11 +27,16 @@ services:
     volumes:
       - ./backend/documents:/app/documents
       - ./backend/chroma_db:/app/chroma_db
+      # conversations.db / rag_logs.db / image_links.db and uploaded images live
+      # here. Without this, conversation_store.py's write-through durability (the
+      # whole point of it — surviving a Redis eviction or restart) is lost the
+      # moment the container is recreated.
+      - ./backend/data:/app/data
 
   frontend:
     build: ./frontend
     ports:
-      - "8081:80"
+      - "8081:8080"   # nginx runs unprivileged, so it binds 8080 not 80
     depends_on:
       - backend
     networks:
