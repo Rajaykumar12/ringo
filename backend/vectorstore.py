@@ -147,10 +147,10 @@ class LangChainRAG:
         # LLM — Groq Llama 3.3 70B (default) + Llama 3.1 8B (fast tier, routed by query
         # complexity — see rag.py:pick_model)
         self.llm = ChatGroq(
-            model="llama-3.3-70b-versatile", api_key=self.groq_api_key, temperature=0.7
+            model="openai/gpt-oss-120b", api_key=self.groq_api_key, temperature=0.7
         )
         self.llm_fast = ChatGroq(
-            model="llama-3.1-8b-instant", api_key=self.groq_api_key, temperature=0.7
+            model="openai/gpt-oss-20b", api_key=self.groq_api_key, temperature=0.7
         )
         logger.info("Groq API initialized")
 

@@ -13,7 +13,7 @@ Admin dashboard are both gated behind it.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `GROQ_API_KEY` | Yes | — | Groq API key for text and vision models |
-| `VISION_MODEL` | No | `qwen/qwen3.6-27b` | Groq model used for image chat and image follow-ups |
+| `VISION_MODEL` | No | `qwen/qwen3.8-27b` | Groq model used for image chat and image follow-ups |
 | `REDIS_URL` | No | `redis://localhost:6379` | Session memory and response cache (falls back to in-memory) |
 | `ALLOWED_ORIGINS` | No | `localhost:5173` | Comma-separated CORS origins — set to your frontend's deployed origin(s) |
 | `ALLOWED_ORIGIN_REGEX` | No | — | Regex alternative/addition to `ALLOWED_ORIGINS` |

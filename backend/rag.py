@@ -69,7 +69,7 @@ def _is_structural_query(query: str) -> bool:
 
 
 ENABLE_QUERY_REWRITE = os.environ.get("ENABLE_QUERY_REWRITE", "true").lower() == "true"
-_QUERY_REWRITE_MODEL = "llama-3.1-8b-instant"
+_QUERY_REWRITE_MODEL = "openai/gpt-oss-20b"
 _QUERY_REWRITE_MIN_LEN = 15  # below this there's not enough signal to usefully rephrase
 _QUERY_REWRITE_COUNT = 2
 

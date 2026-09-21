@@ -8,8 +8,8 @@ configuration, [CONFIGURATION.md](CONFIGURATION.md); for the HTTP surface,
 
 ## Stack
 
-- **Groq (Llama 3.3-70b / 3.1-8b-instant)** for fast text generation, with automatic model tiering
-- **Groq vision model** for image-aware chat
+- **Groq (`openai/gpt-oss-120b` / `openai/gpt-oss-20b`)** for fast text generation, with automatic model tiering
+- **Groq vision model** (`qwen/qwen3.8-27b`) for image-aware chat
 - **HuggingFace** (`all-MiniLM-L6-v2`) for local semantic embeddings
 - **ChromaDB** for persistent vector storage
 - **PyMuPDF / python-docx / BeautifulSoup / openpyxl** for parsing PDF, PPTX, DOCX, HTML, CSV, and XLSX documents

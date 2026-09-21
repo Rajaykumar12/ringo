@@ -27,7 +27,7 @@ def _get_client():
 def _score(prompt: str) -> float | None:
     try:
         resp = _get_client().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=10,
             temperature=0.0,

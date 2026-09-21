@@ -13,7 +13,7 @@ from groq import Groq
 
 logger = logging.getLogger("ringo.vision")
 
-# qwen/qwen3.6-27b (and other reasoning models) emit a <think>...</think>
+# qwen/qwen3.8-27b (and other reasoning models) emit a <think>...</think>
 # block ahead of the actual answer — strip it so raw chain-of-thought never
 # reaches the user. If generation gets cut off mid-thought (hits max_tokens
 # before closing the tag), there's no closing </think> to match — the second
@@ -22,7 +22,7 @@ logger = logging.getLogger("ringo.vision")
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _UNCLOSED_THINK_RE = re.compile(r"<think>.*", re.DOTALL)
 
-VISION_MODEL = os.environ.get("VISION_MODEL", "qwen/qwen3.6-27b")
+VISION_MODEL = os.environ.get("VISION_MODEL", "qwen/qwen3.8-27b")
 MAX_IMAGE_SIZE_MB = int(os.environ.get("MAX_IMAGE_SIZE_MB", 8))
 
 _client = None
