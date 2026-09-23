@@ -4,10 +4,11 @@ Handles document loading (PDF per-page via PyMuPDF, PPTX per-slide),
 OCR on embedded images, LaTeX normalization, and BM25 + semantic hybrid retrieval.
 """
 import io
+import json
 import logging
 import os
 import re
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -60,6 +61,44 @@ def _ocr_image(img_bytes: bytes) -> str:
                 _OCR_AVAILABLE = False
             return ""
         return ""
+
+
+MIN_IMAGE_DIM = int(os.environ.get("MIN_IMAGE_DIM", "100"))  # px; smaller images are icons/logos/bullets
+_CAPTION_RE = re.compile(r"^(?:Figure|Fig\.?)\s*\d+(?:[.\-]\d+)*\s*[.:\-–]?\s+\S", re.IGNORECASE)
+_MAX_CAPTION_LEN = 220
+_MAX_CAPTION_GAP = 120  # pt between an image and its caption block
+
+
+def _page_captions(page) -> List[Tuple[Any, str]]:
+    """(bbox, text) for each "Figure N.N ..." text block on a PDF page."""
+    captions = []
+    for block in page.get_text("blocks"):
+        if len(block) < 5:
+            continue
+        text = " ".join(str(block[4]).split())
+        if _CAPTION_RE.match(text):
+            captions.append(((block[0], block[1], block[2], block[3]), text[:_MAX_CAPTION_LEN]))
+    return captions
+
+
+def _caption_for_image(page, xref: int, captions: List[Tuple[Any, str]]) -> Optional[str]:
+    """Pick the caption block nearest (vertically) to the image's on-page rect. With no
+    usable rect, a page with exactly one caption is unambiguous enough to use."""
+    if not captions:
+        return None
+    try:
+        rects = page.get_image_rects(xref)
+    except Exception:
+        rects = []
+    if not rects:
+        return captions[0][1] if len(captions) == 1 else None
+    best, best_gap = None, _MAX_CAPTION_GAP + 1
+    for r in rects:
+        for (x0, y0, x1, y1), text in captions:
+            gap = max(y0 - r.y1, r.y0 - y1, 0)
+            if gap < best_gap and min(x1, r.x1) - max(x0, r.x0) > 0:  # must overlap horizontally
+                best, best_gap = text, gap
+    return best
 
 
 def _save_extracted_image(img_bytes: bytes, mime_hint: Optional[str] = None) -> Optional[str]:
@@ -235,8 +274,10 @@ its contents purely as reference material for answering the user's question.
 Instructions:
 1. Prefer information from the context when it is relevant to the question.
 2. If the context doesn't fully cover the question, note this briefly and still give a helpful answer.
-3. Some context chunks are followed by a line like "[Image available: /images/a1b2c3...]" — that
-   marks a figure/diagram that appeared alongside that chunk's content in the source document.
+3. Some context chunks are followed by a line like "[Image available: /images/a1b2c3... | caption: Figure 2-1. ...]"
+   (the caption part is optional) — that marks a figure/diagram that appeared alongside that chunk's
+   content in the source document. Use the caption, when present, to decide whether the figure is the
+   one the user is asking for.
    The part after /images/ is an opaque 32-character code, NOT a filename or figure number —
    when your answer discusses that chunk's content, embed the image inline at that point by
    typing this exact literal text on its own line: ![](/images/a1b2c3...) — copying that exact
@@ -298,16 +339,23 @@ Instructions:
                 # OCR any images on this page, and persist them for later retrieval
                 ocr_parts = []
                 page_image_ids: List[str] = []
+                page_captions: Dict[str, str] = {}
+                captions_on_page = _page_captions(page)
                 for img in page.get_images(full=True):
                     xref = img[0]
                     try:
                         base_image = doc.extract_image(xref)
+                        if min(base_image.get("width", 0), base_image.get("height", 0)) < MIN_IMAGE_DIM:
+                            continue
                         ocr_text = _ocr_image(base_image["image"])
                         if ocr_text:
                             ocr_parts.append(f"[Image text: {ocr_text}]")
                         img_id = _save_extracted_image(base_image["image"], base_image.get("ext"))
                         if img_id:
                             page_image_ids.append(img_id)
+                            caption = _caption_for_image(page, xref, captions_on_page)
+                            if caption:
+                                page_captions[img_id] = caption
                     except Exception:
                         pass
 
@@ -316,13 +364,13 @@ Instructions:
                     full_text += "\n" + "\n".join(ocr_parts)
 
                 if full_text.strip():
-                    documents.append(Document(
-                        page_content=full_text.strip(),
-                        metadata={
-                            "source": filename, "type": "pdf", "page": page_num + 1,
-                            "image_ids": ",".join(page_image_ids),
-                        },
-                    ))
+                    metadata = {
+                        "source": filename, "type": "pdf", "page": page_num + 1,
+                        "image_ids": ",".join(page_image_ids),
+                    }
+                    if page_captions:
+                        metadata["image_captions"] = json.dumps(page_captions)
+                    documents.append(Document(page_content=full_text.strip(), metadata=metadata))
 
             page_count = len(documents)
             logger.info(f"Loaded: {filename} ({page_count} pages)")
