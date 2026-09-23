@@ -33,7 +33,7 @@ def _ext_for(mime_type: Optional[str]) -> str:
     # PyMuPDF/python-pptx sometimes give raw formats like "png"/"jpeg" instead of a MIME type
     bare = mime_type.lstrip(".").lower()
     if bare in _MIME_BY_EXT:
-        return f".{bare}"
+        return ".jpg" if bare == "jpeg" else f".{bare}"
     return ".png"
 
 
@@ -55,7 +55,7 @@ def save_image(data: bytes, mime_type: Optional[str] = None) -> str:
 # so probe those directly rather than listing the directory: /images/{id} is an
 # unauthenticated hot path and image_links.py documents that files are never
 # pruned, so an os.listdir() here was O(total images) on every single request.
-_KNOWN_EXTS = (".png", ".jpg", ".webp", ".gif", ".bmp")
+_KNOWN_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")  # .jpeg: files written before _ext_for normalised it
 
 
 def _resolve_path(image_id: str) -> Optional[str]:
