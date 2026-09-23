@@ -323,3 +323,102 @@ def test_sanitize_mixed_keeps_only_the_local_one():
     md = f"![ok](/images/{VALID_IMG_ID}) and ![bad](https://evil.test/x.png)"
     clean, _ = _sanitize_and_filter_images(md, [], {VALID_IMG_ID})
     assert f"/images/{VALID_IMG_ID}" in clean and "evil.test" not in clean
+
+
+# --- relevance floor / captions / small talk -------------------------------------
+
+class _FakeEncoder:
+    """Scores a pair by a keyword lookup so tests don't load the real model."""
+    def __init__(self, table):
+        self.table = table
+
+    def predict(self, pairs):
+        return [next((v for k, v in self.table.items() if k in text), -20.0) for _, text in pairs]
+
+
+def _patch_encoder(monkeypatch, table):
+    import rag
+    monkeypatch.setattr(rag, "_get_cross_encoder", lambda: _FakeEncoder(table))
+
+
+def test_rerank_drops_chunks_below_min_score_even_when_few(monkeypatch):
+    from rag import rerank_documents
+    _patch_encoder(monkeypatch, {"good": 3.0, "noise": -9.0})
+    docs = [Document(page_content="good", metadata={}), Document(page_content="noise", metadata={})]
+    assert [d.page_content for d in rerank_documents("q", docs, top_n=10, min_score=-5.0)] == ["good"]
+
+
+def test_rerank_returns_nothing_when_all_below_floor(monkeypatch):
+    from rag import rerank_documents
+    _patch_encoder(monkeypatch, {"noise": -9.0})
+    assert rerank_documents("Hello", [Document(page_content="noise", metadata={})], min_score=-5.0) == []
+
+
+def test_is_small_talk():
+    from rag import _is_small_talk
+    assert _is_small_talk("Hello") and _is_small_talk("hey there!") and _is_small_talk("Thank you.")
+    assert not _is_small_talk("Hello, explain attention")
+
+
+def test_format_chunk_shows_caption_for_relevant_image():
+    import json
+    doc = Document(page_content="text", metadata={
+        "source": "a.pdf", "page": 1, "image_ids": "aa,bb",
+        "image_captions": json.dumps({"aa": "Figure 1-1. Transformer"}),
+    })
+    out = _format_chunk(doc, {"aa", "bb"})
+    assert "[Image available: /images/aa | caption: Figure 1-1. Transformer]" in out
+    assert "[Image available: /images/bb]" in out
+
+
+def test_image_gate_uses_caption_when_present(monkeypatch):
+    import json
+    from rag import _relevant_image_ids
+    _patch_encoder(monkeypatch, {"Transformer diagram": 2.0, "unrelated logo": -9.0, "page prose": 4.0})
+    doc = Document(page_content="page prose", metadata={
+        "image_ids": "aa,bb,cc",
+        "image_captions": json.dumps({"aa": "Transformer diagram", "bb": "unrelated logo"}),
+    })
+    # aa: caption relevant; bb: caption irrelevant despite relevant page; cc: uncaptioned -> page text
+    assert _relevant_image_ids("q", [doc], threshold=-5.0) == {"aa", "cc"}
+
+
+def test_page_caption_regex():
+    from vectorstore import _CAPTION_RE
+    assert _CAPTION_RE.match("Figure 1-32. Open source LLMs")
+    assert _CAPTION_RE.match("Fig. 3: Attention")
+    assert not _CAPTION_RE.match("Figures are useful")
+    assert not _CAPTION_RE.match("As shown in Figure 1-2")
+
+
+def test_is_figure_query():
+    from rag import _is_figure_query
+    assert _is_figure_query("Give me the diagram of the LLM architecture")
+    assert _is_figure_query("show the figures for attention")
+    assert not _is_figure_query("What is quantization?")
+
+
+def test_image_gate_uses_best_score_across_rewrites(monkeypatch):
+    import json
+    from rag import _relevant_image_ids
+    # the raw request phrasing scores badly against the caption; the rewrite scores well
+    class Enc:
+        def predict(self, pairs):
+            return [3.0 if q == "LLM architecture diagram" else -9.0 for q, _ in pairs]
+    import rag
+    monkeypatch.setattr(rag, "_get_cross_encoder", lambda: Enc())
+    doc = Document(page_content="p", metadata={"image_ids": "aa", "image_captions": json.dumps({"aa": "Figure 3-4. x"})})
+    assert _relevant_image_ids("Give me the diagram of the LLM architecture", [doc], threshold=-2.0) == set()
+    assert _relevant_image_ids("Give me the diagram of the LLM architecture", [doc], threshold=-2.0,
+                               alt_queries=("LLM architecture diagram",)) == {"aa"}
+
+
+def test_image_store_serves_jpeg_extension(tmp_path, monkeypatch):
+    import image_store
+    monkeypatch.setattr(image_store, "IMAGES_DIR", str(tmp_path))
+    # legacy file written as .jpeg (PyMuPDF's "jpeg" hint used to be kept verbatim)
+    (tmp_path / ("a" * 32 + ".jpeg")).write_bytes(b"x")
+    assert image_store.load_image("a" * 32) == (b"x", "image/jpeg")
+    # new saves normalise to .jpg
+    new_id = image_store.save_image(b"y", "jpeg")
+    assert (tmp_path / f"{new_id}.jpg").exists()

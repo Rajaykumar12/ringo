@@ -3,6 +3,7 @@ rag.py — Public API for the RAG system.
 Initializes the singleton instance and provides interface methods.
 """
 import hashlib
+import json
 import logging
 import os
 import re
@@ -21,6 +22,12 @@ rag_system = None
 _cross_encoder = None
 RERANK_MODEL = os.environ.get("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 RERANK_TOP_N = int(os.environ.get("RERANK_TOP_N", "10"))
+# ms-marco-MiniLM emits raw logits. Measured on this corpus (chunk-level): clear questions
+# have their best chunks at roughly +5 to +8, while off-topic ones ("capital of France")
+# top out near -2.4 and the rest sit below -10. Chunks under this floor are dropped rather
+# than shown as citations / sent as context. Greetings are handled separately (they score
+# deceptively high, ~-1.7, so they skip retrieval outright — see _is_small_talk).
+RERANK_MIN_SCORE = float(os.environ.get("RERANK_MIN_SCORE", "-2.0"))
 
 
 # Double-checked locking: without it, two concurrent cold-start requests can both
@@ -40,17 +47,22 @@ def _get_cross_encoder():
     return _cross_encoder
 
 
-def rerank_documents(query: str, docs: List[Document], top_n: int = RERANK_TOP_N) -> List[Document]:
+def rerank_documents(query: str, docs: List[Document], top_n: int = RERANK_TOP_N,
+                     min_score: float = RERANK_MIN_SCORE) -> List[Document]:
     """Cross-encoder re-rank + cutoff so the merged BM25+semantic hit list doesn't
-    balloon the prompt with noisy, low-relevance chunks as the corpus grows."""
-    if len(docs) <= top_n:
+    balloon the prompt with noisy, low-relevance chunks as the corpus grows.
+
+    Always scores (even when len(docs) <= top_n) so `min_score` can drop chunks that are
+    merely the nearest neighbours of an off-topic query like "Hello". Without that floor
+    retrieval always "succeeds" and every message gets a full set of unrelated citations."""
+    if not docs:
         return docs
     try:
         encoder = _get_cross_encoder()
         pairs = [[query, d.page_content] for d in docs]
         scores = encoder.predict(pairs)
         ranked = sorted(zip(docs, scores), key=lambda pair: pair[1], reverse=True)
-        return [d for d, _ in ranked[:top_n]]
+        return [d for d, score in ranked[:top_n] if score >= min_score]
     except Exception as e:
         logger.warning("Re-ranking failed (%s) — falling back to first %d retrieved chunks", e, top_n)
         return docs[:top_n]
@@ -61,6 +73,17 @@ _STRUCTURAL_KW = frozenset([
     "list all", "list the", "slide", "slides", "cover", "about this",
     "this book", "this document", "this presentation",
 ])
+
+
+_SMALL_TALK_RE = re.compile(
+    r"^\s*(hi|hello|hey|yo|thanks|thank you|ok|okay|bye|good (morning|afternoon|evening))"
+    r"(\s+(there|ringo|everyone))?\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+
+def _is_small_talk(query: str) -> bool:
+    return bool(_SMALL_TALK_RE.match(query))
 
 
 def _is_structural_query(query: str) -> bool:
@@ -87,17 +110,21 @@ def rewrite_query(query: str) -> List[str]:
         from groq import Groq
         client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         prompt = (
-            f"Rewrite this question into {_QUERY_REWRITE_COUNT} alternate phrasings that "
-            "would help a search engine retrieve the same information. One phrasing per "
-            "line, no numbering, no extra commentary.\n\nQuestion: " + query
+            f"Rewrite this question into {_QUERY_REWRITE_COUNT} short search queries that "
+            "would retrieve the same information from a textbook. Use the technical terms a "
+            "textbook would use, and drop request phrasing such as \"give me\", \"show me\" or "
+            "\"can you\". One query per line, no numbering, no extra commentary.\n\nQuestion: " + query
         )
         resp = client.chat.completions.create(
             model=_QUERY_REWRITE_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=120,
+            # gpt-oss is a reasoning model: at the default effort its hidden reasoning tokens
+            # can consume a small max_tokens budget and leave the answer empty or cut off.
+            max_tokens=300,
+            reasoning_effort="low",
             temperature=0.3,
         )
-        lines = [ln.strip("-•* \t") for ln in resp.choices[0].message.content.strip().splitlines()]
+        lines = [ln.strip("-•* \t") for ln in (resp.choices[0].message.content or "").strip().splitlines()]
         variants = [ln for ln in lines if ln and ln.lower() != query.strip().lower()]
         return variants[:_QUERY_REWRITE_COUNT]
     except Exception as e:
@@ -133,27 +160,111 @@ MAX_RESPONSE_IMAGES = 4
 # ms-marco-MiniLM scores are raw logits, not probabilities — positive generally means
 # the pair is actually relevant, negative means it's just top-k filler (e.g. small talk
 # still pulling back document chunks). Prevents unrelated figures from tagging along.
-IMAGE_RELEVANCE_THRESHOLD = float(os.environ.get("IMAGE_RELEVANCE_THRESHOLD", "0.0"))
+# Same scale as RERANK_MIN_SCORE. It used to be 0.0, which sat above genuinely relevant pages
+# (a page the query was clearly about scored -0.1 and its figure was dropped).
+IMAGE_RELEVANCE_THRESHOLD = float(os.environ.get("IMAGE_RELEVANCE_THRESHOLD", str(RERANK_MIN_SCORE)))
 
 
-def _relevant_image_ids(query: str, docs: List[Document], threshold: float = IMAGE_RELEVANCE_THRESHOLD) -> set:
-    """Score only the chunks that actually carry images against the query, and keep
-    just the ones the cross-encoder considers genuinely relevant. Runs independently of
-    rerank_documents' top_n cutoff, which is skipped entirely for small doc counts."""
-    candidates = [d for d in docs if d.metadata.get("image_ids")]
-    if not candidates:
+def _image_captions(meta: Dict[str, Any]) -> Dict[str, str]:
+    """{image_id: caption} parsed from a chunk's `image_captions` metadata (a JSON string,
+    since Chroma metadata values must be scalars). Missing/corrupt -> {}."""
+    raw = meta.get("image_captions")
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(v, str)} if isinstance(data, dict) else {}
+
+
+_FIGURE_QUERY_RE = re.compile(
+    r"\b(diagram|figure|fig|illustration|picture|image|chart|schematic|visual)s?\b", re.IGNORECASE)
+FIGURE_CAPTION_TOP_K = 3
+FIGURE_CAPTION_MIN_SCORE = float(os.environ.get("FIGURE_CAPTION_MIN_SCORE", "-2.5"))
+_caption_index_cache: Tuple[int, List[Tuple[str, Any, str]]] = (-1, [])
+
+
+def _is_figure_query(query: str) -> bool:
+    return bool(_FIGURE_QUERY_RE.search(query))
+
+
+def _caption_index() -> List[Tuple[str, Any, str]]:
+    """(source, page, caption) for every captioned figure in the index, rebuilt only when
+    the collection size changes (i.e. after an ingest/delete)."""
+    global _caption_index_cache
+    collection = rag_system.vectorstore._collection
+    count = collection.count()
+    if _caption_index_cache[0] != count:
+        seen, entries = set(), []
+        for meta in collection.get(include=["metadatas"])["metadatas"]:
+            for caption in _image_captions(meta or {}).values():
+                key = (meta.get("source"), meta.get("page"), caption)
+                if key not in seen:
+                    seen.add(key)
+                    entries.append(key)
+        _caption_index_cache = (count, entries)
+    return _caption_index_cache[1]
+
+
+def _figure_caption_docs(queries: List[str]) -> List[Document]:
+    """For "show me the diagram of X" questions, page text alone retrieves poorly (the
+    query is mostly request phrasing, and a figure's page is often mostly prose about
+    something else). Match the query and its rewrites directly against figure captions
+    and pull in the chunks of the pages whose captions match."""
+    try:
+        entries = _caption_index()
+        if not entries:
+            return []
+        encoder = _get_cross_encoder()
+        best = [float("-inf")] * len(entries)
+        for q in queries:
+            for i, score in enumerate(encoder.predict([[q, cap] for _, _, cap in entries])):
+                best[i] = max(best[i], float(score))
+        top = sorted(range(len(entries)), key=best.__getitem__, reverse=True)[:FIGURE_CAPTION_TOP_K]
+        docs: List[Document] = []
+        for i in top:
+            if best[i] < FIGURE_CAPTION_MIN_SCORE:
+                continue
+            source, page, caption = entries[i]
+            label = caption[:12]  # e.g. "Figure 3-4. "; caption text is in exactly one chunk of the page
+            res = rag_system.vectorstore._collection.get(
+                where={"$and": [{"source": source}, {"page": page}]}, include=["documents", "metadatas"])
+            docs.extend(Document(page_content=t, metadata=m)
+                        for t, m in zip(res["documents"], res["metadatas"]) if t and label in t)
+        return docs
+    except Exception as e:
+        logger.warning("Figure caption search failed (non-fatal): %s", e)
+        return []
+
+
+def _relevant_image_ids(query: str, docs: List[Document], threshold: float = IMAGE_RELEVANCE_THRESHOLD,
+                        alt_queries: Tuple[str, ...] = ()) -> set:
+    """Score each image against the query and keep the ones the cross-encoder considers
+    relevant. An image with an extracted caption is judged on its own caption, so a
+    relevant page doesn't drag along its unrelated figures; an uncaptioned image falls
+    back to its page's text. Runs independently of rerank_documents' top_n cutoff."""
+    entries = []  # (image_id, text to score against the query)
+    for d in docs:
+        captions = _image_captions(d.metadata)
+        for img_id in d.metadata.get("image_ids", "").split(","):
+            if img_id:
+                entries.append((img_id, captions.get(img_id) or d.page_content))
+    if not entries:
         return set()
     try:
         encoder = _get_cross_encoder()
-        pairs = [[query, d.page_content] for d in candidates]
-        scores = encoder.predict(pairs)
+        # Best score across the original query and its rewrites: a request like "give me the
+        # diagram of X" is mostly phrasing, and the rewrite (just "X diagram") matches captions better.
+        scores = [max(row) for row in zip(*(
+            encoder.predict([[q, text] for _, text in entries]) for q in (query, *alt_queries)))]
     except Exception as e:
         logger.warning("Image relevance scoring failed (%s) — allowing all candidate images", e)
-        scores = [threshold] * len(candidates)
+        scores = [threshold] * len(entries)
     ids = set()
-    for d, score in zip(candidates, scores):
+    for (img_id, _), score in zip(entries, scores):
         if score >= threshold:
-            ids.update(i for i in d.metadata.get("image_ids", "").split(",") if i)
+            ids.add(img_id)
     return ids
 
 
@@ -188,9 +299,12 @@ def _format_chunk(doc: Document, relevant_image_ids: set = frozenset(), index: O
         header = f"[{index}] {header}"
     lines = [header, doc.page_content]
     raw_ids = meta.get("image_ids", "")
+    captions = _image_captions(meta)
     for img_id in raw_ids.split(","):
         if img_id and img_id in relevant_image_ids:
-            lines.append(f"[Image available: /images/{img_id}]")
+            caption = captions.get(img_id)
+            lines.append(f"[Image available: /images/{img_id} | caption: {caption}]" if caption
+                         else f"[Image available: /images/{img_id}]")
     return "\n".join(lines)
 
 
@@ -416,6 +530,15 @@ def prepare_context(query: str) -> Dict[str, Any]:
     Returns everything the generation half needs: docs, citations, the numbered
     context string, and the image allow-list the sanitizers validate against.
     """
+    if _is_small_talk(query):
+        # "Hello" has no information need: retrieval would only return the nearest
+        # unrelated chunks, which then surface as bogus citations.
+        return {
+            "docs": [], "sources": [], "valid_citation_indices": set(),
+            "relevant_image_ids": set(), "candidate_images": [],
+            "context": "No relevant context found.", "low_context": False,
+        }
+
     retriever = rag_system.get_retriever()
 
     # Original query plus any rewritten variants. These retrievals are fully
@@ -442,9 +565,22 @@ def prepare_context(query: str) -> Dict[str, Any]:
                 seen.add(h)
                 docs.append(d)
 
+    # Figure-seeking queries also search figure captions directly (adds candidate chunks;
+    # the re-rank below still decides what survives).
+    figure_docs: List[Document] = _figure_caption_docs(variants) if _is_figure_query(query) else []
+
     # Cross-encoder re-rank + cutoff — the BM25+semantic ensemble over-retrieves,
     # so this trims to the most relevant chunks before they hit the prompt
     docs = rerank_documents(query, docs)
+
+    # Caption matches already passed their own (caption-level) relevance floor; the
+    # page-text floor above, scored against the raw request phrasing, would discard them.
+    kept = {hashlib.sha256(d.page_content.strip().encode("utf-8")).digest() for d in docs}
+    for d in figure_docs:
+        h = hashlib.sha256(d.page_content.strip().encode("utf-8")).digest()
+        if h not in kept:
+            kept.add(h)
+            docs.append(d)
 
     # For structural queries, prepend dedicated structure chunks
     if _is_structural_query(query) and rag_system.vectorstore:
@@ -465,7 +601,7 @@ def prepare_context(query: str) -> Dict[str, Any]:
     # Structured, 1-indexed source citations (one per chunk) and any images tied to
     # the retrieved chunks. Context chunks are numbered [1], [2], ... to match —
     # the system prompt instructs the LLM to cite that number inline.
-    relevant_image_ids = _relevant_image_ids(query, docs)
+    relevant_image_ids = _relevant_image_ids(query, docs, alt_queries=tuple(variants[1:]))
     return {
         "docs": docs,
         "sources": _build_source_citations(docs),
